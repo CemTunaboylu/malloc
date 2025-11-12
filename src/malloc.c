@@ -1,23 +1,15 @@
 #include <sys/types.h>
-#include <unistd.h>
+#include <stdint.h>
 #include <stdio.h>
+
+#include "internal.h"
 
 #define CURRENT_BRK sbrk(0)
 #define SIZE_OF_BLOCK sizeof(struct s_block)
 
 #define align4(x) ((((x-1) >> 2) << 2) + 4)
 
-// since blocks are always used with pointers, we define the type as a pointer type
-typedef struct s_block *block;
-
-// structs ara aligned by default, so cannot make free smaller at this point
-// block is 32-bit aligned until data
-struct s_block {
-    size_t size;
-    block next;
-    int free;
-    char data[1]; // pointing to the start of allocated memory
-}; 
+block head = NULL; 
 
 void split_block(block b, size_t aligned_size_to_shrink){
     // b->data is *char so the pointer arithmetic below has 4 bytes precision 
@@ -25,10 +17,37 @@ void split_block(block b, size_t aligned_size_to_shrink){
 
     rem_free->size =  b->size - aligned_size_to_shrink - SIZE_OF_BLOCK;
     rem_free->next = b->next;
+    rem_free->prev= b;
+    if (b->next) {
+        b->next->prev = rem_free;
+    }
     rem_free->free = 1;
 
     b->size = aligned_size_to_shrink;
     b->next = rem_free;
+}
+
+void fuse_fwd(block b){
+    for (block cursor=b; cursor->next && cursor->next->free; cursor=cursor->next) {
+        b->size = SIZE_OF_BLOCK + cursor->next->size;
+        b->next = cursor;
+        cursor->prev=b;
+    }
+}
+
+void fuse_bwd(block* b){
+    if ((*b)->free) {
+        return;
+    }
+    block cursor = *b;
+    block next = (*b)->next;
+    for (; cursor->prev && cursor->free; cursor=cursor->prev) {
+        block prev = cursor->prev;
+        prev->size = SIZE_OF_BLOCK + cursor->size;
+        cursor = prev;
+    }
+    cursor->next = next;
+    *b = cursor;
 }
 
 block first_fit_find(block head, block* tail, size_t aligned_size){
@@ -51,33 +70,35 @@ block extend_heap(block* last, size_t aligned_size){
     }
     brk->size = aligned_size;
     brk->next = NULL;
+    brk->prev= NULL;
     if (*last) {
         (*last)->next = (block)brk;
+        brk->prev = *last;
     }
     brk->free = 0;
     return brk;
 }
 
-void* head = NULL; 
-
 void* malloc(size_t size) {
-    void* tail = head;
+    block tail = head;
     size_t aligned_size = align4(size); 
-    block blk = first_fit_find(head, tail, aligned_size);
+    block blk = first_fit_find(head, &tail, aligned_size);
     if (blk == NULL) {
         // if failed nothing to do, if not block is not larger than size
         blk = extend_heap(&tail, aligned_size); 
     } 
     if (blk == NULL) {
-        return blk;
+        return NULL;
     }
+    // assert alignment
+    // MM_ASSERT(is_aligned(blk));
     blk->free = 0;
     // if size is larger such that it can allocate at least 
     // a new block and an additional 4 bytes, split the block
     if ((blk->size-aligned_size) > (SIZE_OF_BLOCK+4)) {
         split_block(blk, aligned_size);
     }
-    return blk;
+    return (void*)blk->data;
 } 
 
 // allocate memory for an array of length len consisting of 
@@ -85,14 +106,16 @@ void* malloc(size_t size) {
 // properly aligned for object
 // if succeeds, initialize all bytes to 0.
 void* calloc(size_t len, size_t size_of) {
-    size_t total = len * size_of;
-    block* new = malloc(total);
-    if (new == NULL) {
+    if (size_of != 0 && len > (SIZE_MAX / size_of)) {
         return NULL;
     }
-    int num_bytes = align4(total) << 2; // new->data is *char which is 1 byte
-    for (size_t i=0; i<num_bytes; i++) {
-        new[i] = 0;
+    size_t total_bytes = len * size_of;
+    unsigned char* p= (unsigned char*) malloc(total_bytes);
+    if (p == NULL) {
+        return NULL;
     }
-    return new;
+    for (size_t i=0; i<total_bytes; i++) {
+        p[i] = 0;
+    }
+    return p;
 }
