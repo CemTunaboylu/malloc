@@ -4,7 +4,7 @@
 
 #include "internal.h"
 
-#define CURRENT_BRK sbrk(0)
+#define CURRENT_BRK mm_sbrk(0)
 #define SIZE_OF_BLOCK sizeof(struct s_block)
 
 #define align4(x) ((((x-1) >> 2) << 2) + 4)
@@ -64,7 +64,7 @@ block first_fit_find(block head, block* tail, size_t aligned_size){
 
 block extend_heap(block* last, size_t aligned_size){
     block brk = CURRENT_BRK;
-    if (sbrk(SIZE_OF_BLOCK + aligned_size) == (void*) -1) {
+    if (mm_sbrk(SIZE_OF_BLOCK + aligned_size) == (void*) -1) {
         perror("failed to allocate memory");
         return NULL;
     }
