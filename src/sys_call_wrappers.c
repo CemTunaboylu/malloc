@@ -13,8 +13,8 @@
 void* mm_sbrk(long inc){
     return sbrk(inc);
 }
-void* mm_mmap(size_t n);
-int   mm_munmap(void* p, size_t n);
+void* mm_mmap(size_t n){ (void)n; return NULL; }
+int   mm_munmap(void* p, size_t n){ (void)p; (void)n; return 0; }
 
 #if defined(__clang__)
     #pragma clang diagnostic pop

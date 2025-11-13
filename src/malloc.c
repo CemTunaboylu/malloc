@@ -4,17 +4,25 @@
 
 #include "internal.h"
 
+#define align(x) (align_up_fundamental(x))
 #define CURRENT_BRK mm_sbrk(0)
-#define SIZE_OF_BLOCK sizeof(struct s_block)
-
-#define align4(x) ((((x-1) >> 2) << 2) + 4)
+#define SIZE_OF_BLOCK (align_up_fundamental(sizeof(struct s_block)))
+#define ADDITIONAL_BYTES_FOR_SPLITTING MAX_ALIGNMENT
 
 block head = NULL; 
 
-void split_block(block b, size_t aligned_size_to_shrink){
-    // b->data is *char so the pointer arithmetic below has 4 bytes precision 
-    block rem_free = (block)(b->data + aligned_size_to_shrink);
+long* allocated_memory(block b) {
+    return b->user_memory;
+}
 
+// no-op for now
+void free(void* p) {
+    (void)p;
+    head = NULL;
+}
+
+void split_block(block b, size_t aligned_size_to_shrink){
+    block rem_free = (block)((char*)allocated_memory(b) + aligned_size_to_shrink);
     rem_free->size =  b->size - aligned_size_to_shrink - SIZE_OF_BLOCK;
     rem_free->next = b->next;
     rem_free->prev= b;
@@ -22,7 +30,6 @@ void split_block(block b, size_t aligned_size_to_shrink){
         b->next->prev = rem_free;
     }
     rem_free->free = 1;
-
     b->size = aligned_size_to_shrink;
     b->next = rem_free;
 }
@@ -80,25 +87,36 @@ block extend_heap(block* last, size_t aligned_size){
 }
 
 void* malloc(size_t size) {
+    if (size == 0) return NULL; 
+
     block tail = head;
-    size_t aligned_size = align4(size); 
-    block blk = first_fit_find(head, &tail, aligned_size);
-    if (blk == NULL) {
-        // if failed nothing to do, if not block is not larger than size
+    size_t aligned_size = align(size); 
+    block blk;
+
+    if (head == NULL) {
         blk = extend_heap(&tail, aligned_size); 
-    } 
+        head = blk;
+    } else {
+        blk = first_fit_find(head, &tail, aligned_size);
+        if (blk == NULL) {
+            // if failed nothing to do, if not block is not larger than size
+            blk = extend_heap(&tail, aligned_size); 
+        } 
+    }
+
     if (blk == NULL) {
         return NULL;
     }
-    // assert alignment
-    // MM_ASSERT(is_aligned(blk));
+
     blk->free = 0;
-    // if size is larger such that it can allocate at least 
-    // a new block and an additional 4 bytes, split the block
-    if ((blk->size-aligned_size) > (SIZE_OF_BLOCK+4)) {
+
+    size_t remaining_size = blk->size - aligned_size;
+    size_t min_splittable_total_block_size = SIZE_OF_BLOCK+ADDITIONAL_BYTES_FOR_SPLITTING;
+    if (remaining_size > min_splittable_total_block_size) {
         split_block(blk, aligned_size);
     }
-    return (void*)blk->data;
+
+    return (void*)allocated_memory(blk);
 } 
 
 // allocate memory for an array of length len consisting of 
