@@ -13,12 +13,12 @@ static inline int is_aligned(void* p) {
     return ((uintptr_t)p % _Alignof(max_align_t)) == 0;
 }
 
-void ensure_my_malloc_is_called() {
+void ensure_my_malloc_is_called(void) {
     MM_ASSERT_MALLOC_CALLED(1);
     MM_RESET_MALLOC_CALL_MARKER();
 }
 
-void ensure_my_free_is_called() {
+void ensure_my_free_is_called(void) {
     MM_ASSERT_FREE_CALLED(1);
     MM_RESET_FREE_CALL_MARKER();
 }
