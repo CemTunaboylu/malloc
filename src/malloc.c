@@ -1,3 +1,4 @@
+#include <stddef.h>
 #include <sys/types.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -8,6 +9,7 @@
 #define align(x) (align_up_fundamental(x))
 #define CURRENT_BRK mm_sbrk(0)
 #define SIZE_OF_BLOCK (align_up_fundamental(sizeof(struct s_block)))
+#define BLOCK_OFFSET (offsetof(struct s_block, user_memory))
 #define ADDITIONAL_BYTES_FOR_SPLITTING MAX_ALIGNMENT
 
 block head = NULL; 
@@ -16,11 +18,26 @@ long* allocated_memory(block b) {
     return b->user_memory;
 }
 
+block reconstruct_from_user_memory(void* p) {
+    return (block)((char*)p - BLOCK_OFFSET);
+}
+
+int is_addr_valid_heap_addr(void* p) {
+    if (head == NULL) return 0;
+    if ((void*) head > p || CURRENT_BRK < p) return 0;
+
+    block blk = reconstruct_from_user_memory(p);
+    return (p == (void*)allocated_memory(blk));
+}
+
 // no-op for now
 void free(void* p) {
     MM_FREE_CALL();
-    (void)p;
-    head = NULL;
+    if (!is_addr_valid_heap_addr(p)) {
+        return;
+    }
+    block blk = reconstruct_from_user_memory(p);
+    blk->free = 1;
 }
 
 void split_block(block b, size_t aligned_size_to_shrink){

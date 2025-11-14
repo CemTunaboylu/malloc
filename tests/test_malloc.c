@@ -13,6 +13,20 @@ static inline int is_aligned(void* p) {
     return ((uintptr_t)p % _Alignof(max_align_t)) == 0;
 }
 
+block recons_blk_from_user_mem_ptr(void* p) {
+    block head = reconstruct_from_user_memory(p);
+    TEST_CHECK(is_aligned(head));
+    TEST_CHECK(p == (void*)allocated_memory(head));
+    TEST_MSG("head=%p, p=%p, alloc(head)=%p",
+         (void*)head, p, (void*)allocated_memory(head));
+    TEST_CHECK(sizeof(head->size) == 8);
+    TEST_CHECK(sizeof(head->next) == 8);
+    TEST_CHECK(sizeof(head->prev) == 8);
+    TEST_CHECK(sizeof(head->free) == 4);
+    TEST_CHECK(sizeof(head->user_memory) == 8);
+    return head;
+}
+
 void ensure_my_malloc_is_called(void) {
     MM_ASSERT_MALLOC_CALLED(1);
     MM_RESET_MALLOC_CALL_MARKER();
@@ -43,6 +57,25 @@ static void test_align_up(void) {
     TEST_CHECK(multiple == align_up_fundamental(multiple));
 }
 
+static void test_invalid_addr_for_is_valid_addr(void) {
+    void *p = malloc(1);
+    ensure_my_malloc_is_called();
+    TEST_CHECK(p != NULL);
+    p = (char*)p + sizeof(struct s_block);
+    TEST_CHECK(is_addr_valid_heap_addr(p) == 0);
+    free(p);
+    ensure_my_free_is_called();
+}
+
+static void test_valid_addr_for_is_valid_addr(void) {
+    void *p = malloc(1);
+    ensure_my_malloc_is_called();
+    TEST_CHECK(p != NULL);
+    TEST_CHECK(is_addr_valid_heap_addr(p) == 1);
+    free(p);
+    ensure_my_free_is_called();
+}
+
 // malloc(0) is expected to return NULL pointer
 static void test_malloc_zero(void) {
     void *p = malloc(0);
@@ -58,18 +91,8 @@ static void test_header_alignment_and_size(void) {
     ensure_my_malloc_is_called();
     TEST_CHECK(p != NULL);
 
-    size_t offset = offsetof(struct s_block, user_memory);
-    block head = (block)((char*)p - offset);
-    TEST_CHECK(is_aligned(head));
-    TEST_CHECK(p == (void*)allocated_memory(head));
-    TEST_MSG("head=%p, p=%p, alloc(head)=%p",
-         (void*)head, p, (void*)allocated_memory(head));
-    TEST_CHECK(sizeof(head->size) == 8);
+    block head = recons_blk_from_user_mem_ptr(p);
     TEST_CHECK(head->size == align_up_fundamental(requested_bytes));
-    TEST_CHECK(sizeof(head->next) == 8);
-    TEST_CHECK(sizeof(head->prev) == 8);
-    TEST_CHECK(sizeof(head->free) == 4);
-    TEST_CHECK(sizeof(head->user_memory) == 8);
 
     size_t size_of_block = sizeof(struct s_block);
     // 4*8 + (4 but max_align_t aligned so 8) = 40
@@ -105,12 +128,28 @@ static void test_calloc_zero_fill(void) {
     ensure_my_free_is_called();
 }
 
+static void test_free(void) {
+    size_t requested_bytes = 1;
+    void *p = malloc(requested_bytes);
+    ensure_my_malloc_is_called();
+    TEST_CHECK(p != NULL);
+    free(p);
+    ensure_my_free_is_called();
+
+    // ensure we set the block free 
+    block head = recons_blk_from_user_mem_ptr(p);
+    TEST_CHECK(head->free);
+}
+
 TEST_LIST = {
     { "test_align_up",                       test_align_up },
+    { "test_invalid_addr_for_is_valid_addr",                       test_invalid_addr_for_is_valid_addr },
+    { "test_valid_addr_for_is_valid_addr",                       test_valid_addr_for_is_valid_addr },
     { "test_malloc_zero",                       test_malloc_zero },
     { "test_header_alignment_and_size",                  test_header_alignment_and_size },
     { "test_malloc_allocated_memory_aligned",   test_malloc_allocated_memory_aligned },
-    { "calloc_zero_fill",              test_calloc_zero_fill },
+    { "test_calloc_zero_fill",              test_calloc_zero_fill },
+    { "test_free",              test_free },
     // { "realloc_grow_shrink",  test_realloc_grow_and_shrink },
     { NULL, NULL }
 };

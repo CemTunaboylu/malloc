@@ -15,6 +15,11 @@ struct s_block {
 }; 
 
 long* allocated_memory(block b); 
+block reconstruct_from_user_memory(void* p); 
+
+#ifdef TESTING
+    int is_addr_valid_heap_addr(void *p);
+#endif
 
 // test probes use head, thus we need to make it external
 extern block head; 
