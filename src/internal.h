@@ -1,9 +1,6 @@
 #pragma once
 
-#include <stdalign.h>
-#include <stddef.h>
 #include <sys/types.h>
-#include <unistd.h>
 
 // since blocks are always used with pointers, we define the type as a pointer type
 typedef struct s_block *block;
@@ -21,14 +18,9 @@ long* allocated_memory(block b);
 
 // test probes use head, thus we need to make it external
 extern block head; 
+extern const int MAX_ALIGNMENT;
 
-// assuming x is power of 2
-static inline size_t align_up(size_t x, size_t a) { 
-    size_t num_bits = (x >> 1)-1;
-    return (((a-1) >> num_bits) << num_bits) + x; 
-}
-static const int MAX_ALIGNMENT = _Alignof(max_align_t); 
-static inline size_t align_up_fundamental(size_t a) { return align_up(MAX_ALIGNMENT, a); }
+size_t align_up_fundamental(size_t);
 
 /*
 The allocator calls these wrappers. In tests, they can be 
