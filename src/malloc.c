@@ -18,6 +18,7 @@ long* allocated_memory(block b) {
 
 // no-op for now
 void free(void* p) {
+    MM_FREE_CALL();
     (void)p;
     head = NULL;
 }

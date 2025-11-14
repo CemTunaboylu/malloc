@@ -38,6 +38,11 @@ void ensure_my_malloc_is_called() {
     MM_RESET_MALLOC_CALL_MARKER();
 }
 
+void ensure_my_free_is_called() {
+    MM_ASSERT_FREE_CALLED(1);
+    MM_RESET_FREE_CALL_MARKER();
+}
+
 static void test_align_up(void) {
     size_t one_short = MAX_ALIGNMENT - 1;
     TEST_CHECK((one_short+1) == align_up_fundamental(one_short));
@@ -59,6 +64,7 @@ static void test_malloc_zero(void) {
     ensure_my_malloc_is_called();
     TEST_CHECK(p == NULL);
     free(p);
+    ensure_my_free_is_called();
 }
 
 static void test_header_alignment_and_size(void) {
@@ -92,6 +98,7 @@ static void test_header_alignment_and_size(void) {
          expected_block_size,
          align_up_fundamental(size_of_block));
     free(p);
+    ensure_my_free_is_called();
 }
 
 static void test_malloc_allocated_memory_aligned(void) {
@@ -100,6 +107,7 @@ static void test_malloc_allocated_memory_aligned(void) {
     TEST_CHECK(p != NULL);
     TEST_CHECK(is_aligned(p));
     free(p);
+    ensure_my_free_is_called();
 }
 
 

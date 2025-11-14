@@ -10,6 +10,11 @@
   #define MM_RESET_MALLOC_CALL_MARKER() (malloc_called = 0)
   #define MM_ASSERT_MALLOC_CALLED(times) assert(malloc_called == times)
 
+  int free_called;
+  #define MM_FREE_CALL() (free_called = 1)
+  #define MM_RESET_FREE_CALL_MARKER() (free_called = 0)
+  #define MM_ASSERT_FREE_CALLED(times) assert(free_called == times)
+
 #else
   #if defined(__GNUC__)
     #define MM_ASSERT(x) ((void)0)
@@ -18,7 +23,13 @@
     #define MM_ASSERT(x) ((void)0)
     #define MM_UNREACHABLE() ((void)0)
   #endif
+
   #define MM_MALLOC_CALL() ((void)0)
   #define MM_RESET_MALLOC_CALL_MARKER() ((void)0)
   #define MM_ASSERT_MALLOC_CALLED() ((void)0)
+
+  #define MM_FREE_CALL() ((void)0)
+  #define MM_RESET_FREE_CALL_MARKER() ((void)0)
+  #define MM_ASSERT_FREE_CALLED(times)  ((void)0)
+
 #endif
