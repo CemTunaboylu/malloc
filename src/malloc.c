@@ -127,6 +127,7 @@ void* malloc(size_t size) {
 // properly aligned for object
 // if succeeds, initialize all bytes to 0.
 void* calloc(size_t len, size_t size_of) {
+    MM_CALLOC_CALL();
     if (size_of != 0 && len > (SIZE_MAX / size_of)) {
         return NULL;
     }

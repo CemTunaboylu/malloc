@@ -15,6 +15,11 @@
   #define MM_RESET_FREE_CALL_MARKER() (free_called = 0)
   #define MM_ASSERT_FREE_CALLED(times) assert(free_called == times)
 
+  int calloc_called;
+  #define MM_CALLOC_CALL() (calloc_called = 1)
+  #define MM_RESET_CALLOC_CALL_MARKER() (calloc_called = 0)
+  #define MM_ASSERT_CALLOC_CALLED(times) assert(calloc_called == times)
+
 #else
   #if defined(__GNUC__)
     #define MM_ASSERT(x) ((void)0)
@@ -31,5 +36,9 @@
   #define MM_FREE_CALL() ((void)0)
   #define MM_RESET_FREE_CALL_MARKER() ((void)0)
   #define MM_ASSERT_FREE_CALLED(times)  ((void)0)
+
+  #define MM_CALLOC_CALL() ((void)0)
+  #define MM_RESET_CALLOC_CALL_MARKER() ((void)0)
+  #define MM_ASSERT_CALLOC_CALLED() ((void)0)
 
 #endif
