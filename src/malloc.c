@@ -3,6 +3,7 @@
 #include <stdio.h>
 
 #include "internal.h"
+#include "mm_debug.h"
 
 #define align(x) (align_up_fundamental(x))
 #define CURRENT_BRK mm_sbrk(0)
@@ -87,6 +88,7 @@ block extend_heap(block* last, size_t aligned_size){
 }
 
 void* malloc(size_t size) {
+    MM_MALLOC_CALL();
     if (size == 0) return NULL; 
 
     block tail = head;

@@ -5,6 +5,7 @@
 #include "acutest.h"
 #include <internal.h>
 #include <malloc/malloc.h>
+#include "mm_debug.h"
 
 extern block head;
 
@@ -32,6 +33,11 @@ static inline int is_aligned(void* p) {
     return ((uintptr_t)p % _Alignof(max_align_t)) == 0;
 }
 
+void ensure_my_malloc_is_called() {
+    MM_ASSERT_MALLOC_CALLED(1);
+    MM_RESET_MALLOC_CALL_MARKER();
+}
+
 static void test_align_up(void) {
     size_t one_short = MAX_ALIGNMENT - 1;
     TEST_CHECK((one_short+1) == align_up_fundamental(one_short));
@@ -50,6 +56,7 @@ static void test_align_up(void) {
 // malloc(0) is expected to return NULL pointer
 static void test_malloc_zero(void) {
     void *p = malloc(0);
+    ensure_my_malloc_is_called();
     TEST_CHECK(p == NULL);
     free(p);
 }
@@ -57,6 +64,7 @@ static void test_malloc_zero(void) {
 static void test_header_alignment_and_size(void) {
     size_t requested_bytes = 1;
     void *p = malloc(requested_bytes);
+    ensure_my_malloc_is_called();
     TEST_CHECK(p != NULL);
 
     size_t offset = offsetof(struct s_block, user_memory);
@@ -88,6 +96,7 @@ static void test_header_alignment_and_size(void) {
 
 static void test_malloc_allocated_memory_aligned(void) {
     void *p = malloc(31);
+    ensure_my_malloc_is_called();
     TEST_CHECK(p != NULL);
     TEST_CHECK(is_aligned(p));
     free(p);
