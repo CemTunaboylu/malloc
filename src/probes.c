@@ -1,5 +1,6 @@
 #ifdef TESTING
 #include <internal.h>
+#include <stdio.h>
 
 extern block head;
 
@@ -17,6 +18,7 @@ typedef int (*block_predicate_t)(block* b);
 // Example predicates used by tests.
 static int pred_is_free(block b) { return b->free; }
 static int pred_is_used(block b) { return !b->free; }
+static int pred_true(block b) { (void)b; return 1; }
 
 // Count blocks that satisfy a given predicate.
 size_t _mm_blocks(int (*predicate)(block)) {
@@ -29,5 +31,20 @@ size_t _mm_blocks(int (*predicate)(block)) {
 
 size_t _mm_free_blocks(void)     { return _mm_blocks(pred_is_free); }
 size_t _mm_non_free_blocks(void) { return _mm_blocks(pred_is_used); }
+size_t _mm_total_blocks(void)     { return _mm_blocks(pred_true); }
+
+void _mm_tear_down_allocator(void){
+    for(block b=head; b; b=b->next) {
+        mm_free(b);
+    }
+}
+
+void print_list_into_file(FILE* f) {
+    if (head == NULL) return;
+    for (block b = head; b; b = b->next) {
+        fprintf(f, "[ size:%lu - free:%d ]\n", b->size, b->free);
+    } 
+}
+
 
 #endif

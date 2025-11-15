@@ -42,7 +42,45 @@ int is_addr_valid_heap_addr(void* p) {
     return (p == (void*)allocated_memory(blk));
 }
 
-// no-op for now
+void fuse_fwd(block b){
+    if (b->free == 0) {
+        return;
+    }
+    if (b->next == NULL) {
+        return;
+    }
+    block cursor = b;
+    MM_FUSE_FWD_CALL();
+    while( cursor->next && cursor->next->free ) {
+        b->size += SIZE_OF_BLOCK + cursor->next->size;
+        cursor=cursor->next;
+    }
+    b->next=cursor->next;
+    if (cursor->next)
+        cursor->next->prev = b;
+}
+
+void fuse_bwd(block* b){
+    if ((*b)->free == 0) {
+        return;
+    }
+    if ((*b)->prev == NULL) {
+        return;
+    }
+    block cursor = *b;
+    block next = (*b)->next;
+    MM_FUSE_BWD_CALL();
+    while (cursor->prev && cursor->prev->free) {
+        block prev = cursor->prev;
+        prev->size += SIZE_OF_BLOCK + cursor->size;
+        cursor = prev;
+    }
+    cursor->next = next;
+    if (next) 
+        next->prev = cursor;
+    *b = cursor;
+}
+
 void FREE(void* p) {
     MM_FREE_CALL();
     if (!is_addr_valid_heap_addr(p)) {
@@ -63,29 +101,6 @@ void split_block(block b, size_t aligned_size_to_shrink){
     rem_free->free = 1;
     b->size = aligned_size_to_shrink;
     b->next = rem_free;
-}
-
-void fuse_fwd(block b){
-    for (block cursor=b; cursor->next && cursor->next->free; cursor=cursor->next) {
-        b->size = SIZE_OF_BLOCK + cursor->next->size;
-        b->next = cursor;
-        cursor->prev=b;
-    }
-}
-
-void fuse_bwd(block* b){
-    if ((*b)->free) {
-        return;
-    }
-    block cursor = *b;
-    block next = (*b)->next;
-    for (; cursor->prev && cursor->free; cursor=cursor->prev) {
-        block prev = cursor->prev;
-        prev->size = SIZE_OF_BLOCK + cursor->size;
-        cursor = prev;
-    }
-    cursor->next = next;
-    *b = cursor;
 }
 
 block first_fit_find(block head, block* tail, size_t aligned_size){
