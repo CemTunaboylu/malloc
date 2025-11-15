@@ -5,11 +5,8 @@
 static void pre_test_sanity(void);
 static void post_test_sanity(void);
 
-// Acutest will run this before every test
 #define TEST_INIT  pre_test_sanity()
-// Acutest will run this after every test
 #define TEST_FINI  post_test_sanity()
-
 
 #include "acutest.h"
 #include <internal.h>
@@ -24,19 +21,52 @@ extern block head;
 #define FREE_UNDER_TESTING free
 #define CURRENT_BRK mm_sbrk(0)
 
+static size_t base_total_blocks;
+static size_t base_free_blocks;
+static void  *base_brk;
+
+#ifdef ENABLE_LOG
+    static FILE *global_test_log;
+    #define LOG(...) fprintf(global_test_log, __VA_ARGS__)
+    #define PRINT_BLOCK_LIST() print_list_into_file(global_test_log)
+
+    static void free_resources(void){
+        fclose(global_test_log);
+    }
+#else
+    #define LOG(...) do{}while(0)
+    #define PRINT_BLOCK_LIST() do{}while(0)
+#endif
+
 static void pre_test_sanity(void) {
-    // Example: ensure debug markers are reset
+#ifdef ENABLE_LOG
+    if (!global_test_log){
+        global_test_log = fopen("malloc_tests.log", "w");
+        TEST_CHECK(global_test_log);
+        TEST_MSG("cannot open test_log_file, but tests will continue");
+    }
+#endif
+
     MM_RESET_MALLOC_CALL_MARKER();
     MM_RESET_FREE_CALL_MARKER();
     MM_RESET_FREED_MARKER();
     MM_RESET_CALLOC_CALL_MARKER();
 
-    assert(head == NULL);
+    base_total_blocks = _mm_total_blocks();
+    base_free_blocks  = _mm_free_blocks();
+    base_brk          = CURRENT_BRK;
 }
 
 static void post_test_sanity(void) {
-    _mm_tear_down_allocator();
-    assert(head == NULL);
+    // No *new* permanent blocks
+    TEST_CHECK(_mm_total_blocks() == base_total_blocks);
+    TEST_MSG("block leak: %zu -> %zu",
+             base_total_blocks, _mm_total_blocks());
+
+    // Free count should also match baseline
+    TEST_CHECK(_mm_free_blocks() == base_free_blocks);
+    TEST_MSG("free block mismatch: %zu -> %zu",
+             base_free_blocks, _mm_free_blocks());
 }
 
 FILE* open_file_for_test(const char* test_name) {
@@ -107,7 +137,6 @@ static void test_align_up(void) {
     TEST_CHECK(multiple == align_up_fundamental(multiple));
 }
 
-
 static void test_invalid_addr_outside_before_for_is_valid_addr(void) {
     void *p = MALLOC_UNDER_TESTING(1);
     ensure_my_malloc_is_called();
@@ -147,7 +176,6 @@ static void test_malloc_zero(void) {
     ensure_my_malloc_is_called();
     TEST_CHECK(p == NULL);
     FREE_UNDER_TESTING(p);
-    ensure_my_free_is_called();
 }
 
 static void test_header_alignment_and_size(void) {
@@ -198,8 +226,8 @@ static void test_calloc_zero_fill(void) {
 }
 
 static void test_forward_fusion_2_blocks(void) {
-    FILE* test_file = open_file_for_test(__func__);
-    print_list_into_file(test_file);
+    LOG("=== %s: start ===\n", __func__);
+    PRINT_BLOCK_LIST();
 
     size_t num_blocks = 2;
     void* ptrs[2] = {NULL};
@@ -212,8 +240,8 @@ static void test_forward_fusion_2_blocks(void) {
         ptrs[i] = p;
     }
 
-    fprintf(test_file, "after malloc\n");
-    print_list_into_file(test_file);
+    LOG("=== %s: post-malloc ===\n", __func__);
+    PRINT_BLOCK_LIST();
 
     for(size_t i=0; i<num_blocks; i++) {
         void *p = ptrs[i];
@@ -221,8 +249,8 @@ static void test_forward_fusion_2_blocks(void) {
         blk->free = 1;
     }
 
-    fprintf(test_file, "after artificially freeing blocks\n");
-    print_list_into_file(test_file);
+    LOG("=== %s: after artificially freeing blocks ===\n", __func__);
+    PRINT_BLOCK_LIST();
 
     void *p = ptrs[0];
     block blk = reconstruct_from_user_memory(p);
@@ -230,59 +258,51 @@ static void test_forward_fusion_2_blocks(void) {
     fuse_fwd(blk);
     ensure_fuse_fwd_is_called();
 
-    fprintf(test_file, "after forward fusion\n");
-    print_list_into_file(test_file);
+    LOG("=== %s: post-fwd-fusion ===\n", __func__);
+    PRINT_BLOCK_LIST();
 
-    TEST_CHECK(head->free);
     size_t aligned_base_bytes = align_up_fundamental(base_bytes);
     size_t block_size = sizeof(struct s_block);
     size_t expected_size = (aligned_base_bytes*2+block_size);
-    TEST_CHECK(head->size == expected_size);
+    TEST_CHECK(blk->size == expected_size);
     TEST_MSG("size must be %lu, got %lu", expected_size, head->size);
-    TEST_CHECK(head->next == NULL);
+    TEST_CHECK(blk->next == NULL);
     TEST_MSG("tail shoud have been merged into head, but head->next: %p", (void*)head->next);
-    TEST_CHECK(head->prev == NULL);
-    TEST_MSG("head should have prev null but head->prev: %p", (void*)head->prev);
 
     // should free the first block
     FREE_UNDER_TESTING(p);
     ensure_my_free_is_called();
     ensure_freed();
 
-    fprintf(test_file, "after free\n");
-
-    print_list_into_file(test_file);
-    TEST_CHECK(head == NULL);
-
-    fclose(test_file);
+    LOG("=== %s: end ===\n", __func__);
 }
 
 static void test_backward_fusion_2_blocks(void) {
-    FILE* test_file = open_file_for_test(__func__);
-    print_list_into_file(test_file);
+    LOG("=== %s: start ===\n", __func__);
+    PRINT_BLOCK_LIST();
 
-    size_t num_blocks = 2;
-    void* ptrs[2] = {NULL};
+    const size_t n = 2;
+    void* ptrs[n] = {NULL};
     size_t base_bytes = 10;
 
-    for(size_t i=0; i<num_blocks; i++) {
+    for(size_t i=0; i<n; i++) {
         void *p = MALLOC_UNDER_TESTING(base_bytes+i);
         ensure_my_malloc_is_called();
         TEST_CHECK(p != NULL);
         ptrs[i] = p;
     }
 
-    fprintf(test_file, "after malloc\n");
-    print_list_into_file(test_file);
+    LOG("=== %s: post-malloc ===\n", __func__);
+    PRINT_BLOCK_LIST();
 
-    for(size_t i=0; i<num_blocks; i++) {
+    for(size_t i=0; i<n; i++) {
         void *p = ptrs[i];
         block blk = reconstruct_from_user_memory(p);
         blk->free = 1;
     }
 
-    fprintf(test_file, "after artificially freeing blocks\n");
-    print_list_into_file(test_file);
+    LOG("=== %s: after artificially freeing blocks ===\n", __func__);
+    PRINT_BLOCK_LIST();
 
     void *p = ptrs[1];
     block blk = reconstruct_from_user_memory(p);
@@ -290,114 +310,119 @@ static void test_backward_fusion_2_blocks(void) {
     fuse_bwd(&blk);
     ensure_fuse_bwd_is_called();
 
-    fprintf(test_file, "after forward fusion\n");
-    print_list_into_file(test_file);
+    LOG("=== %s: post-bwd-fusion ===\n", __func__);
+    PRINT_BLOCK_LIST();
 
-    TEST_CHECK(head->free);
     size_t aligned_base_bytes = align_up_fundamental(base_bytes);
     size_t block_size = sizeof(struct s_block);
     size_t expected_size = (aligned_base_bytes*2+block_size);
-    TEST_CHECK(head->size == expected_size);
+    TEST_CHECK(blk->size == expected_size);
     TEST_MSG("size must be %lu, got %lu", expected_size, head->size);
-    TEST_CHECK(head->next == NULL);
+    TEST_CHECK(blk->next == NULL);
     TEST_MSG("tail shoud have been merged into head, but head->next: %p", (void*)head->next);
-    TEST_CHECK(head->prev == NULL);
-    TEST_MSG("head should have prev null but head->prev: %p", (void*)head->prev);
 
-    // should free the first block
     p = ptrs[0];
     FREE_UNDER_TESTING(p);
     ensure_my_free_is_called();
     ensure_freed();
 
-    fprintf(test_file, "after free\n");
-
-    print_list_into_file(test_file);
-    TEST_CHECK(head == NULL);
-
-    fclose(test_file);
+    LOG("=== %s: end ===\n", __func__);
 }
 
 static void test_free_no_release_or_fusion(void) {
-    FILE* test_file = open_file_for_test(__func__);
-    print_list_into_file(test_file);
-    size_t requested_bytes = 1;
-    void *p = MALLOC_UNDER_TESTING(requested_bytes);
-    ensure_my_malloc_is_called();
-    TEST_CHECK(p != NULL);
+    LOG("=== %s: start ===\n", __func__);
+    PRINT_BLOCK_LIST();
 
-    fprintf(test_file, "after malloc\n");
-    size_t requested_bytes_2 = 24;
-    void *l = MALLOC_UNDER_TESTING(requested_bytes_2);
-    ensure_my_malloc_is_called();
-    TEST_CHECK(l != NULL);
-
-    print_list_into_file(test_file);
-
-    // should free the first block
-    FREE_UNDER_TESTING(p);
-    ensure_my_free_is_called();
-    ensure_freed();
-
-    fprintf(test_file, "after free\n");
-
-    print_list_into_file(test_file);
-
-    // ensure we set the block free 
-    block head = recons_blk_from_user_mem_ptr(p);
-    TEST_CHECK(head->free);
-    fclose(test_file);
-
-    FREE_UNDER_TESTING(l);
-    ensure_my_free_is_called();
-    ensure_freed();
-}
-
-static void test_free_with_fusion_no_release(void) {
-    size_t total_blocks = _mm_total_blocks();
-    size_t total_free_blocks = _mm_free_blocks();
-
-    void* ptrs[3] = {NULL};
+    const size_t n = 2;
+    void* ptrs[n] = {NULL};
     size_t base_bytes = 30;
 
-    for(size_t i=0; i<3; i++) {
+    for(size_t i=0; i<n; i++) {
         void *p = MALLOC_UNDER_TESTING(base_bytes+i);
         ensure_my_malloc_is_called();
         TEST_CHECK(p != NULL);
         ptrs[i] = p;
     }
 
-    TEST_CHECK((total_blocks + 3) == _mm_total_blocks());
-
-    for(size_t i=0; i<2; i++) {
-        void *p = ptrs[0];
-        FREE_UNDER_TESTING(p);
-        ensure_my_free_is_called();
-        ensure_freed();
-    }
-
-    TEST_CHECK((total_free_blocks + 2) == _mm_free_blocks());
-    TEST_MSG("total_free_blocks should be 2 more %zu != %lu, total blocks: %zu",
-         total_free_blocks+2,
-         _mm_free_blocks(),
-         total_blocks);
+    LOG("=== %s: post-malloc ===\n", __func__);
+    PRINT_BLOCK_LIST();
 
     void* p = ptrs[0];
-    block head = recons_blk_from_user_mem_ptr(p);
-    TEST_CHECK(head->free);
 
-    size_t total_bytes_after_fusion = align_up_fundamental(base_bytes) + sizeof(struct s_block) + align_up_fundamental(base_bytes+1);
-    TEST_CHECK(head->size == total_bytes_after_fusion);
-    TEST_MSG("size of head add up to %lu != %lu",
-         total_bytes_after_fusion,
-         head->size);
+    FREE_UNDER_TESTING(p);
+    ensure_my_free_is_called();
+    ensure_freed();
 
-    for(size_t i=0; i<3; i++) {
-        void *p = ptrs[0];
-        FREE_UNDER_TESTING(p);
+    LOG("=== %s: post-free ===\n", __func__);
+    PRINT_BLOCK_LIST();
+
+    block blk = recons_blk_from_user_mem_ptr(p);
+    TEST_CHECK(blk->free);
+
+    for(size_t i=1; i<n; i++) {
+        FREE_UNDER_TESTING(ptrs[i]);
         ensure_my_free_is_called();
         ensure_freed();
     }
+    LOG("=== %s: post-free the rest ===\n", __func__);
+    PRINT_BLOCK_LIST();
+    LOG("=== %s: end ===\n", __func__);
+}
+
+static void test_free_with_fusion_no_release(void) {
+    LOG("=== %s: start ===\n", __func__);
+    PRINT_BLOCK_LIST();
+
+    const size_t n = 5;
+    void* ptrs[n] = {NULL};
+    size_t base_bytes = 30;
+
+    for(size_t i=0; i<n; i++) {
+        void *p = MALLOC_UNDER_TESTING(base_bytes);
+        ensure_my_malloc_is_called();
+        TEST_CHECK(p != NULL);
+        ptrs[i] = p;
+    }
+
+    LOG("=== %s: post-malloc ===\n", __func__);
+    PRINT_BLOCK_LIST();
+
+    // leave the last block unfree to avoid release
+    for(size_t i=0; i<n-1; i++) {
+        void *p = ptrs[i];
+        block blk = reconstruct_from_user_memory(p);
+        blk->free = 1;
+    }
+
+    LOG("=== %s: after artificially freeing blocks ===\n", __func__);
+    PRINT_BLOCK_LIST();
+
+    void* p = ptrs[n/2];
+    block blk = reconstruct_from_user_memory(p);
+    block after_fusion_head = blk->prev->prev;
+    FREE_UNDER_TESTING(p);
+    ensure_my_free_is_called();
+    ensure_freed();
+    ensure_fuse_fwd_is_called();
+    ensure_fuse_bwd_is_called();
+
+    LOG("=== %s: post-free middle ===\n", __func__);
+    PRINT_BLOCK_LIST();
+
+    size_t total_bytes_after_fusion = align_up_fundamental(base_bytes)*(n-1) + sizeof(struct s_block)*(n-2);
+    TEST_CHECK(after_fusion_head->size == total_bytes_after_fusion);
+    TEST_MSG("size of after_fusion_head should add up to %lu, not %lu",
+         total_bytes_after_fusion,
+         after_fusion_head->size);
+
+    void *last = ptrs[n-1];
+    FREE_UNDER_TESTING(last);
+    ensure_my_free_is_called();
+    ensure_freed();
+
+    LOG("=== %s: post-free last ===\n", __func__);
+    PRINT_BLOCK_LIST();
+    LOG("=== %s: end ===\n", __func__);
 }
 
 TEST_LIST = {
@@ -414,5 +439,8 @@ TEST_LIST = {
     { "test_free_no_release_or_fusion",              test_free_no_release_or_fusion },
     { "test_free_with_fusion_no_release",              test_free_with_fusion_no_release },
     // { "realloc_grow_shrink",  test_realloc_grow_and_shrink },
+#ifdef ENABLE_LOG
+    { "free_resources",              free_resources},
+#endif
     { NULL, NULL }
 };

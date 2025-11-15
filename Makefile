@@ -6,7 +6,8 @@ WARN     := -Wall -Wextra -Werror -Wpedantic
 DBG      := -O0 -g
 # Do NOT use AddressSanitizer when you override malloc/free globally.
 SAN      := -fsanitize=undefined     # no ASan when overriding malloc
-TEST_DEFS     := -DTESTING                # turn on test-only asserts/hooks
+TEST_DEFS     := -DTESTING -DENABLE_LOG -DENABLE_MM_SBRK                # turn on test-only asserts/hooks
+SHOW_SBRK_RELEASE_FAIL := -DSHOW_SBRK_RELEASE_FAIL
 
 # `-fno-builtin` prevents gcc from assuming builtin malloc/free semantics.
 INCLUDE_INTERNAL := -Isrc # only for when building lib/tests

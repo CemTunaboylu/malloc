@@ -17,6 +17,7 @@
 #define ADDITIONAL_BYTES_FOR_SPLITTING MAX_ALIGNMENT
 
 block head = NULL; 
+static long allocated_bytes;
 
 long* allocated_memory(block b) {
     return b->user_memory;
@@ -96,11 +97,29 @@ void FREE(void* p) {
         else  
             head = NULL;
         
-        void* ok = mm_brk(blk);
-        if (ok == (void*) -1) {
-            perror("error while releasing the tail");
-            return;
-        }
+#ifdef ENABLE_MM_SBRK
+    long back = SIZE_OF_BLOCK + blk->size; 
+    void* old_tail = CURRENT_BRK;
+    MM_ASSERT(allocated_bytes - back >= 0);
+    void* ok = mm_sbrk(-back);
+    if (ok == (void*) -1) {
+        perror("error while releasing the tail");
+        return; 
+    }
+
+    // iff we truly release some pages, then we can project the change
+    if ((char*) old_tail > (char*) CURRENT_BRK)
+        allocated_bytes -= back;
+    #ifdef SHOW_SBRK_RELEASE_FAIL
+        MM_ASSERT((char*) old_tail == (char*) CURRENT_BRK); 
+    #endif
+#elif defined(ENABLE_MM_BRK)
+    void* ok = mm_brk(blk);
+    if (ok == (void*) -1) {
+        perror("error while releasing the tail");
+        return;
+    }
+#endif
     }
 }
 
@@ -131,7 +150,8 @@ block first_fit_find(block head, block* tail, size_t aligned_size){
 
 block extend_heap(block* last, size_t aligned_size){
     block brk = CURRENT_BRK;
-    if (mm_sbrk(SIZE_OF_BLOCK + aligned_size) == (void*) -1) {
+    size_t total_bytes_to_allocate = SIZE_OF_BLOCK + aligned_size;
+    if (mm_sbrk(total_bytes_to_allocate) == (void*) -1) {
         perror("failed to allocate memory");
         return NULL;
     }
@@ -142,6 +162,7 @@ block extend_heap(block* last, size_t aligned_size){
         (*last)->next = (block)brk;
         brk->prev = *last;
     }
+    allocated_bytes += total_bytes_to_allocate;
     return brk;
 }
 
