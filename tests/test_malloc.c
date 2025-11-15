@@ -105,14 +105,27 @@ static void test_align_up(void) {
     TEST_CHECK(multiple == align_up_fundamental(multiple));
 }
 
-static void test_invalid_addr_for_is_valid_addr(void) {
+
+static void test_invalid_addr_outside_before_for_is_valid_addr(void) {
     void *p = MALLOC_UNDER_TESTING(1);
     ensure_my_malloc_is_called();
     TEST_CHECK(p != NULL);
-    p = (char*)p + sizeof(struct s_block);
-    TEST_CHECK(is_addr_valid_heap_addr(p) == 0);
+    void *invalid = (char*)head + sizeof(struct s_block);
+    TEST_CHECK(is_addr_valid_heap_addr(invalid) == 0);
     FREE_UNDER_TESTING(p);
     ensure_my_free_is_called();
+    ensure_freed();
+}
+
+static void test_invalid_addr_outside_after_for_is_valid_addr(void) {
+    void *p = MALLOC_UNDER_TESTING(1);
+    ensure_my_malloc_is_called();
+    TEST_CHECK(p != NULL);
+    void *invalid = (char*)p + sizeof(struct s_block);
+    TEST_CHECK(is_addr_valid_heap_addr(invalid) == 0);
+    FREE_UNDER_TESTING(p);
+    ensure_my_free_is_called();
+    ensure_freed();
 }
 
 static void test_valid_addr_for_is_valid_addr(void) {
@@ -381,7 +394,8 @@ static void test_free_with_fusion_no_release(void) {
 
 TEST_LIST = {
     { "test_align_up",                       test_align_up },
-    { "test_invalid_addr_for_is_valid_addr",                       test_invalid_addr_for_is_valid_addr },
+    { "test_invalid_addr_outside_before_for_is_valid_addr",                       test_invalid_addr_outside_before_for_is_valid_addr },
+    { "test_invalid_addr_outside_after_for_is_valid_addr",                       test_invalid_addr_outside_after_for_is_valid_addr },
     { "test_valid_addr_for_is_valid_addr",                       test_valid_addr_for_is_valid_addr },
     { "test_malloc_zero",                       test_malloc_zero },
     { "test_header_alignment_and_size",                  test_header_alignment_and_size },
