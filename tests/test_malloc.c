@@ -135,6 +135,7 @@ static void test_valid_addr_for_is_valid_addr(void) {
     TEST_CHECK(is_addr_valid_heap_addr(p) == 1);
     FREE_UNDER_TESTING(p);
     ensure_my_free_is_called();
+    ensure_freed();
 }
 
 // malloc(0) is expected to return NULL pointer
@@ -168,6 +169,7 @@ static void test_header_alignment_and_size(void) {
          align_up_fundamental(size_of_block));
     FREE_UNDER_TESTING(p);
     ensure_my_free_is_called();
+    ensure_freed();
 }
 
 static void test_malloc_allocated_memory_aligned(void) {
@@ -177,16 +179,19 @@ static void test_malloc_allocated_memory_aligned(void) {
     TEST_CHECK(is_aligned(p));
     FREE_UNDER_TESTING(p);
     ensure_my_free_is_called();
+    ensure_freed();
 }
 
 static void test_calloc_zero_fill(void) {
     size_t n = 16, sz = 8;
     unsigned char *p = (unsigned char *)CALLOC_UNDER_TESTING(n, sz);
     ensure_my_calloc_is_called();
+    ensure_my_malloc_is_called();
     TEST_ASSERT(p != NULL);
     for (size_t i = 0; i < n*sz; ++i) TEST_CHECK(p[i] == 0);
     FREE_UNDER_TESTING(p);
     ensure_my_free_is_called();
+    ensure_freed();
 }
 
 static void test_forward_fusion_2_blocks(void) {
