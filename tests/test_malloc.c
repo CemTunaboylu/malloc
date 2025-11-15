@@ -5,6 +5,9 @@
 static void pre_test_sanity(void);
 static void post_test_sanity(void);
 
+// run tests in the same process, no fork/exec per test
+#define TEST_NO_EXEC 1
+
 #define TEST_INIT  pre_test_sanity()
 #define TEST_FINI  post_test_sanity()
 
@@ -41,7 +44,7 @@ static void  *base_brk;
 static void pre_test_sanity(void) {
 #ifdef ENABLE_LOG
     if (!global_test_log){
-        global_test_log = fopen("malloc_tests.log", "w");
+        global_test_log = fopen("tests/malloc_tests.log", "a");
         TEST_CHECK(global_test_log);
         TEST_MSG("cannot open test_log_file, but tests will continue");
     }
