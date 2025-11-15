@@ -40,5 +40,7 @@ we can assert “one mmap for big alloc,” “no sbrk for free,” etc.
 
 // used for small allocations < 128 KiB
 void* mm_sbrk(long inc);
+void* mm_brk(const void* p);
+// if more than one page, use this
 void* mm_mmap(size_t n);
 int   mm_munmap(void* p, size_t n);

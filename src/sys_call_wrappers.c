@@ -13,6 +13,9 @@
 void* mm_sbrk(long inc){
     return sbrk(inc);
 }
+void* mm_brk(const void* p){
+    return brk(p);
+}
 void* mm_mmap(size_t n){ (void)n; return NULL; }
 int   mm_munmap(void* p, size_t n){ (void)p; (void)n; return 0; }
 

@@ -82,12 +82,34 @@ void fuse_bwd(block* b){
 }
 
 void FREE(void* p) {
+    if (p == NULL) return;
     MM_FREE_CALL();
     if (!is_addr_valid_heap_addr(p)) {
         return;
     }
     block blk = reconstruct_from_user_memory(p);
+
     blk->free = 1;
+    MM_FREED();
+
+    fuse_fwd(blk);
+    fuse_bwd(&blk);
+
+    int is_at_tail = (!blk->next);
+    int is_at_head = (!blk->prev);
+
+    if (is_at_tail) {
+        if (!is_at_head)
+            blk->prev->next = NULL;
+        else  
+            head = NULL;
+        
+        void* ok = mm_brk(blk);
+        if (ok == (void*) -1) {
+            perror("error while releasing the tail");
+            return;
+        }
+    }
 }
 
 void split_block(block b, size_t aligned_size_to_shrink){

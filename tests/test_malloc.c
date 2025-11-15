@@ -14,6 +14,7 @@ static void post_test_sanity(void);
 #include "acutest.h"
 #include <internal.h>
 #include "mm_debug.h"
+#include "probe.h"
 
 extern block head;
 
@@ -303,12 +304,79 @@ static void test_free_no_release_or_fusion(void) {
     void *p = MALLOC_UNDER_TESTING(requested_bytes);
     ensure_my_malloc_is_called();
     TEST_CHECK(p != NULL);
-    free(p);
+
+    fprintf(test_file, "after malloc\n");
+    size_t requested_bytes_2 = 24;
+    void *l = MALLOC_UNDER_TESTING(requested_bytes_2);
+    ensure_my_malloc_is_called();
+    TEST_CHECK(l != NULL);
+
+    print_list_into_file(test_file);
+
+    // should free the first block
+    FREE_UNDER_TESTING(p);
     ensure_my_free_is_called();
+    ensure_freed();
+
+    fprintf(test_file, "after free\n");
+
+    print_list_into_file(test_file);
 
     // ensure we set the block free 
     block head = recons_blk_from_user_mem_ptr(p);
     TEST_CHECK(head->free);
+    fclose(test_file);
+
+    FREE_UNDER_TESTING(l);
+    ensure_my_free_is_called();
+    ensure_freed();
+}
+
+static void test_free_with_fusion_no_release(void) {
+    size_t total_blocks = _mm_total_blocks();
+    size_t total_free_blocks = _mm_free_blocks();
+
+    void* ptrs[3] = {NULL};
+    size_t base_bytes = 30;
+
+    for(size_t i=0; i<3; i++) {
+        void *p = MALLOC_UNDER_TESTING(base_bytes+i);
+        ensure_my_malloc_is_called();
+        TEST_CHECK(p != NULL);
+        ptrs[i] = p;
+    }
+
+    TEST_CHECK((total_blocks + 3) == _mm_total_blocks());
+
+    for(size_t i=0; i<2; i++) {
+        void *p = ptrs[0];
+        FREE_UNDER_TESTING(p);
+        ensure_my_free_is_called();
+        ensure_freed();
+    }
+
+    TEST_CHECK((total_free_blocks + 2) == _mm_free_blocks());
+    TEST_MSG("total_free_blocks should be 2 more %zu != %lu, total blocks: %zu",
+         total_free_blocks+2,
+         _mm_free_blocks(),
+         total_blocks);
+
+    void* p = ptrs[0];
+    block head = recons_blk_from_user_mem_ptr(p);
+    TEST_CHECK(head->free);
+
+    size_t total_bytes_after_fusion = align_up_fundamental(base_bytes) + sizeof(struct s_block) + align_up_fundamental(base_bytes+1);
+    TEST_CHECK(head->size == total_bytes_after_fusion);
+    TEST_MSG("size of head add up to %lu != %lu",
+         total_bytes_after_fusion,
+         head->size);
+
+    for(size_t i=0; i<3; i++) {
+        void *p = ptrs[0];
+        FREE_UNDER_TESTING(p);
+        ensure_my_free_is_called();
+        ensure_freed();
+    }
 }
 
 TEST_LIST = {
@@ -321,7 +389,8 @@ TEST_LIST = {
     { "test_backward_fusion_2_blocks",              test_backward_fusion_2_blocks },
     { "test_malloc_allocated_memory_aligned",   test_malloc_allocated_memory_aligned },
     { "test_calloc_zero_fill",              test_calloc_zero_fill },
-    { "test_free",              test_free },
+    { "test_free_no_release_or_fusion",              test_free_no_release_or_fusion },
+    { "test_free_with_fusion_no_release",              test_free_with_fusion_no_release },
     // { "realloc_grow_shrink",  test_realloc_grow_and_shrink },
     { NULL, NULL }
 };
