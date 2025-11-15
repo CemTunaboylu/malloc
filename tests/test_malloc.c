@@ -19,9 +19,9 @@ static void post_test_sanity(void);
 
 extern block head;
 
-#define MALLOC_UNDER_TESTING malloc
 #define CALLOC_UNDER_TESTING calloc
 #define FREE_UNDER_TESTING free
+#define MALLOC_UNDER_TESTING malloc
 #define CURRENT_BRK mm_sbrk(0)
 
 static size_t base_total_blocks;

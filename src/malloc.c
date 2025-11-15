@@ -6,9 +6,9 @@
 #include "internal.h"
 #include "mm_debug.h"
 
-#define MALLOC malloc   
 #define CALLOC calloc
 #define FREE free
+#define MALLOC malloc   
 
 #define align(x) (align_up_fundamental(x))
 #define CURRENT_BRK mm_sbrk(0)
@@ -23,6 +23,49 @@ long* allocated_memory(block b) {
     return b->user_memory;
 }
 
+block extend_heap(block* last, size_t aligned_size){
+    block brk = CURRENT_BRK;
+    size_t total_bytes_to_allocate = SIZE_OF_BLOCK + aligned_size;
+    if (mm_sbrk(total_bytes_to_allocate) == (void*) -1) {
+        perror("failed to allocate memory");
+        return NULL;
+    }
+    brk->size = aligned_size;
+    brk->next = NULL;
+    brk->prev= NULL;
+    if (*last) {
+        (*last)->next = (block)brk;
+        brk->prev = *last;
+    }
+    allocated_bytes += total_bytes_to_allocate;
+    return brk;
+}
+
+block first_fit_find(block head, block* tail, size_t aligned_size){
+    block curr = head;
+    // as long as we have block at hand, and it's either NOT free or NOT big enough
+    while (curr && !(curr->free && curr->size >= aligned_size)) {
+        // if we cannot find a suitable block, we keep track of the last block 
+        // so that malloc can append a new block at the end 
+        *tail = curr;
+        curr = curr->next;
+    }
+    return curr;
+}
+
+void split_block(block b, size_t aligned_size_to_shrink){
+    block rem_free = (block)((char*)allocated_memory(b) + aligned_size_to_shrink);
+    rem_free->size =  b->size - aligned_size_to_shrink - SIZE_OF_BLOCK;
+    rem_free->next = b->next;
+    rem_free->prev= b;
+    if (b->next) {
+        b->next->prev = rem_free;
+    }
+    rem_free->free = 1;
+    b->size = aligned_size_to_shrink;
+    b->next = rem_free;
+}
+
 block reconstruct_from_user_memory(void* p) {
     return (block)((char*)p - BLOCK_OFFSET);
 }
@@ -33,6 +76,30 @@ int is_addr_valid_heap_addr(void* p) {
 
     block blk = reconstruct_from_user_memory(p);
     return (p == (void*)allocated_memory(blk));
+}
+
+/* ----- allocators ----- */
+
+void* malloc(size_t);
+
+// allocate memory for an array of length len consisting of 
+// memory chunks of size size_of (of objects of size_of)
+// properly aligned for object
+// if succeeds, initialize all bytes to 0.
+void* CALLOC(size_t len, size_t size_of) {
+    MM_CALLOC_CALL();
+    if (size_of != 0 && len > (SIZE_MAX / size_of)) {
+        return NULL;
+    }
+    size_t total_bytes = len * size_of;
+    unsigned char* p= (unsigned char*) MALLOC(total_bytes);
+    if (p == NULL) {
+        return NULL;
+    }
+    for (size_t i=0; i<total_bytes; i++) {
+        p[i] = 0;
+    }
+    return p;
 }
 
 void fuse_fwd(block b){
@@ -121,49 +188,6 @@ void FREE(void* p) {
     }
 #endif
     }
-}
-
-void split_block(block b, size_t aligned_size_to_shrink){
-    block rem_free = (block)((char*)allocated_memory(b) + aligned_size_to_shrink);
-    rem_free->size =  b->size - aligned_size_to_shrink - SIZE_OF_BLOCK;
-    rem_free->next = b->next;
-    rem_free->prev= b;
-    if (b->next) {
-        b->next->prev = rem_free;
-    }
-    rem_free->free = 1;
-    b->size = aligned_size_to_shrink;
-    b->next = rem_free;
-}
-
-block first_fit_find(block head, block* tail, size_t aligned_size){
-    block curr = head;
-    // as long as we have block at hand, and it's either NOT free or NOT big enough
-    while (curr && !(curr->free && curr->size >= aligned_size)) {
-        // if we cannot find a suitable block, we keep track of the last block 
-        // so that malloc can append a new block at the end 
-        *tail = curr;
-        curr = curr->next;
-    }
-    return curr;
-}
-
-block extend_heap(block* last, size_t aligned_size){
-    block brk = CURRENT_BRK;
-    size_t total_bytes_to_allocate = SIZE_OF_BLOCK + aligned_size;
-    if (mm_sbrk(total_bytes_to_allocate) == (void*) -1) {
-        perror("failed to allocate memory");
-        return NULL;
-    }
-    brk->size = aligned_size;
-    brk->next = NULL;
-    brk->prev= NULL;
-    if (*last) {
-        (*last)->next = (block)brk;
-        brk->prev = *last;
-    }
-    allocated_bytes += total_bytes_to_allocate;
-    return brk;
 }
 
 void* MALLOC(size_t size) {
