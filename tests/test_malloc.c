@@ -30,8 +30,7 @@ static void  *base_brk;
 
 #ifdef ENABLE_LOG
     static FILE *global_test_log;
-    #define LOG(...) fprintf(global_test_log, __VA_ARGS__)
-    #define PRINT_BLOCK_LIST() print_list_into_file(global_test_log)
+    #define LOG(...) fprintf(global_test_log, __VA_ARGS__); print_list_into_file(global_test_log);
 
     static void free_resources(void){
         fclose(global_test_log);
@@ -45,8 +44,7 @@ static void pre_test_sanity(void) {
 #ifdef ENABLE_LOG
     if (!global_test_log){
         global_test_log = fopen("tests/malloc_tests.log", "a");
-        TEST_CHECK(global_test_log);
-        TEST_MSG("cannot open test_log_file, but tests will continue");
+        TEST_CHECK_(global_test_log, "cannot open test_log_file, but tests will continue");
     }
 #endif
 
@@ -62,19 +60,12 @@ static void pre_test_sanity(void) {
 
 static void post_test_sanity(void) {
     // No *new* permanent blocks
-    TEST_CHECK(_mm_total_blocks() == base_total_blocks);
-    TEST_MSG("block leak: %zu -> %zu",
-             base_total_blocks, _mm_total_blocks());
+    TEST_CHECK_(_mm_total_blocks() == base_total_blocks, 
+        "block leak: %zu -> %zu", base_total_blocks, _mm_total_blocks());
 
     // Free count should also match baseline
-    TEST_CHECK(_mm_free_blocks() == base_free_blocks);
-    TEST_MSG("free block mismatch: %zu -> %zu",
-             base_free_blocks, _mm_free_blocks());
-}
-
-FILE* open_file_for_test(const char* test_name) {
-    FILE *fp = fopen(test_name, "w");
-    return fp;
+    TEST_CHECK_(_mm_free_blocks() == base_free_blocks,
+        "free block mismatch: %zu -> %zu",base_free_blocks, _mm_free_blocks());
 }
 
 static inline int is_aligned(void* p) {
@@ -84,8 +75,7 @@ static inline int is_aligned(void* p) {
 block recons_blk_from_user_mem_ptr(void* p) {
     block head = reconstruct_from_user_memory(p);
     TEST_CHECK(is_aligned(head));
-    TEST_CHECK(p == (void*)allocated_memory(head));
-    TEST_MSG("head=%p, p=%p, alloc(head)=%p",
+    TEST_CHECK_(p == (void*)allocated_memory(head),"head=%p, p=%p, alloc(head)=%p",
          (void*)head, p, (void*)allocated_memory(head));
     TEST_CHECK(sizeof(head->size) == 8);
     TEST_CHECK(sizeof(head->next) == 8);
@@ -130,8 +120,8 @@ static void test_align_up(void) {
     TEST_CHECK((one_short+1) == align_up_fundamental(one_short));
 
     size_t one_long = MAX_ALIGNMENT + 1;
-    TEST_CHECK((one_long+(MAX_ALIGNMENT-1)) == align_up_fundamental(one_long));
-    TEST_MSG("%lu != %lu " ,one_long+(MAX_ALIGNMENT-1), align_up_fundamental(one_long));
+    TEST_CHECK_((one_long+(MAX_ALIGNMENT-1)) == align_up_fundamental(one_long), 
+        "%lu != %lu " ,one_long+(MAX_ALIGNMENT-1), align_up_fundamental(one_long));
 
     size_t exact = MAX_ALIGNMENT;
     TEST_CHECK(exact == align_up_fundamental(exact));
@@ -145,8 +135,8 @@ static void test_invalid_addr_outside_before_for_is_valid_addr(void) {
     ensure_my_malloc_is_called();
     TEST_CHECK(p != NULL);
     void *invalid = (char*)head + sizeof(struct s_block)*9;
-    TEST_CHECK(is_addr_valid_heap_addr(invalid) == 0);
-    TEST_MSG("address %p should have been invalid since it is before list head %p", invalid, (void*)head);
+    TEST_CHECK_(is_addr_valid_heap_addr(invalid) == 0, 
+        "address %p should have been invalid since it is before list head %p", invalid, (void*)head);
     FREE_UNDER_TESTING(p);
     ensure_my_free_is_called();
     ensure_freed();
@@ -193,14 +183,14 @@ static void test_header_alignment_and_size(void) {
     size_t size_of_block = sizeof(struct s_block);
     // 4*8 + (4 but max_align_t aligned so 8) = 40
     size_t expected_block_size = 40;
-    TEST_CHECK( size_of_block == expected_block_size);
-    TEST_MSG("size_of_block must be %lu, got %lu",
-         expected_block_size,
-         size_of_block);
-    TEST_CHECK( size_of_block == align_up_fundamental(size_of_block));
-    TEST_MSG("size_of_block must aligned %lu != %lu",
-         expected_block_size,
-         align_up_fundamental(size_of_block));
+    TEST_CHECK_( size_of_block == expected_block_size,
+        "size_of_block must be %lu, got %lu",
+            expected_block_size,
+            size_of_block);
+    TEST_CHECK_( size_of_block == align_up_fundamental(size_of_block),
+        "size_of_block must aligned %lu != %lu",
+            expected_block_size,
+            align_up_fundamental(size_of_block));
     FREE_UNDER_TESTING(p);
     ensure_my_free_is_called();
     ensure_freed();
@@ -230,7 +220,6 @@ static void test_calloc_zero_fill(void) {
 
 static void test_forward_fusion_2_blocks(void) {
     LOG("=== %s: start ===\n", __func__);
-    PRINT_BLOCK_LIST();
 
     size_t num_blocks = 2;
     void* ptrs[2] = {NULL};
@@ -243,8 +232,7 @@ static void test_forward_fusion_2_blocks(void) {
         ptrs[i] = p;
     }
 
-    LOG("=== %s: post-malloc ===\n", __func__);
-    PRINT_BLOCK_LIST();
+    LOG("\tpost-malloc ===\n");
 
     for(size_t i=0; i<num_blocks; i++) {
         void *p = ptrs[i];
@@ -252,8 +240,7 @@ static void test_forward_fusion_2_blocks(void) {
         blk->free = 1;
     }
 
-    LOG("=== %s: after artificially freeing blocks ===\n", __func__);
-    PRINT_BLOCK_LIST();
+    LOG("\tafter artificially freeing blocks ===\n");
 
     void *p = ptrs[0];
     block blk = reconstruct_from_user_memory(p);
@@ -261,16 +248,15 @@ static void test_forward_fusion_2_blocks(void) {
     fuse_fwd(blk);
     ensure_fuse_fwd_is_called();
 
-    LOG("=== %s: post-fwd-fusion ===\n", __func__);
-    PRINT_BLOCK_LIST();
+    LOG("\tpost-fwd-fusion ===\n");
 
     size_t aligned_base_bytes = align_up_fundamental(base_bytes);
     size_t block_size = sizeof(struct s_block);
     size_t expected_size = (aligned_base_bytes*2+block_size);
-    TEST_CHECK(blk->size == expected_size);
-    TEST_MSG("size must be %lu, got %lu", expected_size, head->size);
-    TEST_CHECK(blk->next == NULL);
-    TEST_MSG("tail shoud have been merged into head, but head->next: %p", (void*)head->next);
+    TEST_CHECK_(blk->size == expected_size,
+        "size must be %lu, got %lu", expected_size, head->size);
+    TEST_CHECK_(blk->next == NULL,
+        "tail shoud have been merged into head, but head->next: %p", (void*)head->next);
 
     // should free the first block
     FREE_UNDER_TESTING(p);
@@ -282,7 +268,6 @@ static void test_forward_fusion_2_blocks(void) {
 
 static void test_backward_fusion_2_blocks(void) {
     LOG("=== %s: start ===\n", __func__);
-    PRINT_BLOCK_LIST();
 
     const size_t n = 2;
     void* ptrs[n] = {NULL};
@@ -295,8 +280,7 @@ static void test_backward_fusion_2_blocks(void) {
         ptrs[i] = p;
     }
 
-    LOG("=== %s: post-malloc ===\n", __func__);
-    PRINT_BLOCK_LIST();
+    LOG("\tpost-malloc ===\n");
 
     for(size_t i=0; i<n; i++) {
         void *p = ptrs[i];
@@ -304,8 +288,7 @@ static void test_backward_fusion_2_blocks(void) {
         blk->free = 1;
     }
 
-    LOG("=== %s: after artificially freeing blocks ===\n", __func__);
-    PRINT_BLOCK_LIST();
+    LOG("\t after artificially freeing blocks ===\n");
 
     void *p = ptrs[1];
     block blk = reconstruct_from_user_memory(p);
@@ -313,16 +296,15 @@ static void test_backward_fusion_2_blocks(void) {
     fuse_bwd(&blk);
     ensure_fuse_bwd_is_called();
 
-    LOG("=== %s: post-bwd-fusion ===\n", __func__);
-    PRINT_BLOCK_LIST();
+    LOG("\t post-bwd-fusion ===\n");
 
     size_t aligned_base_bytes = align_up_fundamental(base_bytes);
     size_t block_size = sizeof(struct s_block);
     size_t expected_size = (aligned_base_bytes*2+block_size);
-    TEST_CHECK(blk->size == expected_size);
-    TEST_MSG("size must be %lu, got %lu", expected_size, head->size);
-    TEST_CHECK(blk->next == NULL);
-    TEST_MSG("tail shoud have been merged into head, but head->next: %p", (void*)head->next);
+    TEST_CHECK_(blk->size == expected_size,
+        "size must be %lu, got %lu", expected_size, head->size);
+    TEST_CHECK_(blk->next == NULL,
+        "tail shoud have been merged into head, but head->next: %p", (void*)head->next);
 
     p = ptrs[0];
     FREE_UNDER_TESTING(p);
@@ -334,7 +316,6 @@ static void test_backward_fusion_2_blocks(void) {
 
 static void test_free_no_release_or_fusion(void) {
     LOG("=== %s: start ===\n", __func__);
-    PRINT_BLOCK_LIST();
 
     const size_t n = 2;
     void* ptrs[n] = {NULL};
@@ -347,8 +328,7 @@ static void test_free_no_release_or_fusion(void) {
         ptrs[i] = p;
     }
 
-    LOG("=== %s: post-malloc ===\n", __func__);
-    PRINT_BLOCK_LIST();
+    LOG("\tpost-malloc ===\n");
 
     void* p = ptrs[0];
 
@@ -356,8 +336,7 @@ static void test_free_no_release_or_fusion(void) {
     ensure_my_free_is_called();
     ensure_freed();
 
-    LOG("=== %s: post-free ===\n", __func__);
-    PRINT_BLOCK_LIST();
+    LOG("\tpost-free ===\n");
 
     block blk = recons_blk_from_user_mem_ptr(p);
     TEST_CHECK(blk->free);
@@ -367,14 +346,12 @@ static void test_free_no_release_or_fusion(void) {
         ensure_my_free_is_called();
         ensure_freed();
     }
-    LOG("=== %s: post-free the rest ===\n", __func__);
-    PRINT_BLOCK_LIST();
+
     LOG("=== %s: end ===\n", __func__);
 }
 
 static void test_free_with_fusion_no_release(void) {
     LOG("=== %s: start ===\n", __func__);
-    PRINT_BLOCK_LIST();
 
     const size_t n = 5;
     void* ptrs[n] = {NULL};
@@ -387,8 +364,7 @@ static void test_free_with_fusion_no_release(void) {
         ptrs[i] = p;
     }
 
-    LOG("=== %s: post-malloc ===\n", __func__);
-    PRINT_BLOCK_LIST();
+    LOG("\tpost-malloc ===\n");
 
     // leave the last block unfree to avoid release
     for(size_t i=0; i<n-1; i++) {
@@ -397,8 +373,7 @@ static void test_free_with_fusion_no_release(void) {
         blk->free = 1;
     }
 
-    LOG("=== %s: after artificially freeing blocks ===\n", __func__);
-    PRINT_BLOCK_LIST();
+    LOG("\tafter artificially freeing blocks ===\n");
 
     void* p = ptrs[n/2];
     block blk = reconstruct_from_user_memory(p);
@@ -409,28 +384,24 @@ static void test_free_with_fusion_no_release(void) {
     ensure_fuse_fwd_is_called();
     ensure_fuse_bwd_is_called();
 
-    LOG("=== %s: post-free middle ===\n", __func__);
-    PRINT_BLOCK_LIST();
+    LOG("\tpost-free middle ===\n", __func__);
 
     size_t total_bytes_after_fusion = align_up_fundamental(base_bytes)*(n-1) + sizeof(struct s_block)*(n-2);
-    TEST_CHECK(after_fusion_head->size == total_bytes_after_fusion);
-    TEST_MSG("size of after_fusion_head should add up to %lu, not %lu",
-         total_bytes_after_fusion,
-         after_fusion_head->size);
+    TEST_CHECK_(after_fusion_head->size == total_bytes_after_fusion,
+        "size of after_fusion_head should add up to %lu, not %lu",
+        total_bytes_after_fusion,
+        after_fusion_head->size);
 
     void *last = ptrs[n-1];
     FREE_UNDER_TESTING(last);
     ensure_my_free_is_called();
     ensure_freed();
 
-    LOG("=== %s: post-free last ===\n", __func__);
-    PRINT_BLOCK_LIST();
     LOG("=== %s: end ===\n", __func__);
 }
 
 static void test_copy_block(void) {
     LOG("=== %s: start ===\n", __func__);
-    PRINT_BLOCK_LIST();
 
     const size_t src_len = 9;
     const size_t src_size_of = 4;
@@ -441,8 +412,7 @@ static void test_copy_block(void) {
     TEST_CHECK(p);
     for (size_t i=0;i<src_len;i++) p[i]=i;
 
-    LOG("=== %s: post-malloc with size %lu and setting values for data ===\n", __func__, src_n);
-    PRINT_BLOCK_LIST();
+    LOG("\tpost-malloc with size %lu and setting values for data ===\n", __func__, src_n);
 
     const size_t to_copy_len = 9;
     const size_t to_copy_size_of = 4;
@@ -455,8 +425,7 @@ static void test_copy_block(void) {
     block q_blk = reconstruct_from_user_memory(q);
 
     deep_copy_block(p_blk, q_blk);
-    LOG("=== %s: after deep copy block ===\n", __func__);
-    PRINT_BLOCK_LIST();
+    LOG("\tafter deep copy block ===\n");
 
     size_t min = src_len > to_copy_len ? to_copy_len : src_len;
     for (size_t i=0;i<min;i++) TEST_CHECK_(p[i] == q[i], "%d != %d", p[i], q[i]);
@@ -468,6 +437,7 @@ static void test_copy_block(void) {
     FREE_UNDER_TESTING(q);
     ensure_my_free_is_called();
     ensure_freed();
+    LOG("=== %s: end ===\n", __func__);
 }
 
 TEST_LIST = {
