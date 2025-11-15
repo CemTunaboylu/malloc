@@ -14,14 +14,22 @@
 #define align(x) (align_up_fundamental(x))
 #define CURRENT_BRK mm_sbrk(0)
 #define SIZE_OF_BLOCK (align_up_fundamental(sizeof(struct s_block)))
-#define BLOCK_OFFSET (offsetof(struct s_block, user_memory))
+#define BLOCK_OFFSET (offsetof(struct s_block, start_of_alloc_mem))
 #define ADDITIONAL_BYTES_FOR_SPLITTING MAX_ALIGNMENT
 
 block head = NULL; 
 static long allocated_bytes;
 
 long* allocated_memory(block b) {
-    return b->user_memory;
+    return b->start_of_alloc_mem;
+}
+
+void *end(block b) {
+    return (void*)((char*) allocated_memory(b) + b->size);
+}
+
+int do_ends_hold(block b) {
+    return (end(b) == b->end_of_alloc_mem);
 }
 
 void deep_copy_block(block src, block to) {
@@ -46,6 +54,7 @@ block extend_heap(block* last, size_t aligned_size){
     brk->size = aligned_size;
     brk->next = NULL;
     brk->prev= NULL;
+    brk->end_of_alloc_mem = end(brk); 
     if (*last) {
         (*last)->next = (block)brk;
         brk->prev = *last;
@@ -78,6 +87,7 @@ void fuse_next(block b){
         b->size += SIZE_OF_BLOCK + next->size;
     }
     b->next = next->next;
+    b->end_of_alloc_mem = end(b);
     if (next->next)
         next->next->prev = b;
 }
@@ -96,6 +106,7 @@ void fuse_fwd(block b){
         cursor=cursor->next;
     }
     b->next=cursor->next;
+    b->end_of_alloc_mem = end(b);
     if (cursor->next)
         cursor->next->prev = b;
 }
@@ -119,6 +130,7 @@ void fuse_bwd(block* b){
     if (next) 
         next->prev = cursor;
     *b = cursor;
+    (*b)->end_of_alloc_mem = end(*b);
 }
 
 int is_addr_valid_heap_addr(void* p) {
@@ -126,6 +138,7 @@ int is_addr_valid_heap_addr(void* p) {
     if ((void*) head > p || CURRENT_BRK < p) return 0;
 
     block blk = reconstruct_from_user_memory(p);
+    if (!do_ends_hold(blk)) return 0;
     return (p == (void*)allocated_memory(blk));
 }
 
@@ -144,8 +157,10 @@ void split_block(block b, size_t aligned_size_to_shrink){
         b->next->prev = rem_free;
     }
     rem_free->free = 1;
+    rem_free->end_of_alloc_mem = end(rem_free);
     b->size = aligned_size_to_shrink;
     b->next = rem_free;
+    b->end_of_alloc_mem = end(b);
 }
 
 block reconstruct_from_user_memory(void* p) {

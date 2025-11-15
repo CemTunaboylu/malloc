@@ -81,8 +81,9 @@ block recons_blk_from_user_mem_ptr(void* p) {
     TEST_CHECK(sizeof(head->size) == 8);
     TEST_CHECK(sizeof(head->next) == 8);
     TEST_CHECK(sizeof(head->prev) == 8);
+    TEST_CHECK(sizeof(head->end_of_alloc_mem) == 8);
     TEST_CHECK(sizeof(head->free) == 4);
-    TEST_CHECK(sizeof(head->user_memory) == 8);
+    TEST_CHECK(sizeof(head->start_of_alloc_mem) == 8);
     return head;
 }
 
@@ -193,8 +194,8 @@ static void test_header_alignment_and_size(void) {
     TEST_CHECK(head->size == align_up_fundamental(requested_bytes));
 
     size_t size_of_block = sizeof(struct s_block);
-    // 4*8 + (4 but max_align_t aligned so 8) = 40
-    size_t expected_block_size = 40;
+    // 5*8 + (4 but max_align_t aligned so 8) = 40
+    size_t expected_block_size = (6*8);
     TEST_CHECK_( size_of_block == expected_block_size,
         "size_of_block must be %lu, got %lu",
             expected_block_size,

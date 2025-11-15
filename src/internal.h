@@ -10,8 +10,9 @@ struct s_block {
     size_t size;
     block next;
     block prev;
+    void* end_of_alloc_mem;
     int free;
-    long user_memory[1]; // pointing to the start of allocated memory
+    long start_of_alloc_mem[1]; // pointing to the start of allocated memory
 }; 
 
 long* allocated_memory(block b); 
