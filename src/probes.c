@@ -1,5 +1,6 @@
 #ifdef TESTING
 #include <internal.h>
+#include <malloc/malloc.h>
 #include <stdio.h>
 
 extern block head;
@@ -35,7 +36,7 @@ size_t _mm_total_blocks(void)     { return _mm_blocks(pred_true); }
 
 void _mm_tear_down_allocator(void){
     for(block b=head; b; b=b->next) {
-        mm_free(b);
+        free(b);
     }
 }
 

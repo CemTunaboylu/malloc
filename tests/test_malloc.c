@@ -13,14 +13,16 @@ static void post_test_sanity(void);
 
 #include "acutest.h"
 #include <internal.h>
+#include <malloc/malloc.h>
 #include "mm_debug.h"
 #include "probe.h"
 
 extern block head;
 
-#define MALLOC_UNDER_TESTING mm_malloc
-#define CALLOC_UNDER_TESTING mm_calloc
-#define FREE_UNDER_TESTING mm_free
+#define MALLOC_UNDER_TESTING malloc
+#define CALLOC_UNDER_TESTING calloc
+#define FREE_UNDER_TESTING free
+#define CURRENT_BRK mm_sbrk(0)
 
 static void pre_test_sanity(void) {
     // Example: ensure debug markers are reset

@@ -6,17 +6,9 @@
 #include "internal.h"
 #include "mm_debug.h"
 
-// When testing, we don't override the libc allocators to ensure full control
-// over the calls. E.g. acutest allocates thus challenges the assumptions of tests.
-#ifdef TESTING 
-    #define MALLOC mm_malloc
-    #define CALLOC mm_calloc
-    #define FREE mm_free
-#else 
-    #define MALLOC malloc   
-    #define CALLOC calloc
-    #define FREE free
-#endif
+#define MALLOC malloc   
+#define CALLOC calloc
+#define FREE free
 
 #define align(x) (align_up_fundamental(x))
 #define CURRENT_BRK mm_sbrk(0)
