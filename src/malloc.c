@@ -150,7 +150,6 @@ block extend_heap(block* last, size_t aligned_size){
         (*last)->next = (block)brk;
         brk->prev = *last;
     }
-    brk->free = 0;
     return brk;
 }
 
