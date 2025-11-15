@@ -19,6 +19,9 @@ block reconstruct_from_user_memory(void* p);
 
 #ifdef TESTING
     int is_addr_valid_heap_addr(void *p);
+    void* mm_malloc(size_t size);
+    void* mm_calloc(size_t len, size_t size_of);
+    void mm_free(void* p);
 #endif
 
 // test probes use head, thus we need to make it external

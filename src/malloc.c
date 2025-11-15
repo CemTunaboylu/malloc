@@ -6,6 +6,18 @@
 #include "internal.h"
 #include "mm_debug.h"
 
+// When testing, we don't override the libc allocators to ensure full control
+// over the calls. E.g. acutest allocates thus challenges the assumptions of tests.
+#ifdef TESTING 
+    #define MALLOC mm_malloc
+    #define CALLOC mm_calloc
+    #define FREE mm_free
+#else 
+    #define MALLOC malloc   
+    #define CALLOC calloc
+    #define FREE free
+#endif
+
 #define align(x) (align_up_fundamental(x))
 #define CURRENT_BRK mm_sbrk(0)
 #define SIZE_OF_BLOCK (align_up_fundamental(sizeof(struct s_block)))
@@ -31,7 +43,7 @@ int is_addr_valid_heap_addr(void* p) {
 }
 
 // no-op for now
-void free(void* p) {
+void FREE(void* p) {
     MM_FREE_CALL();
     if (!is_addr_valid_heap_addr(p)) {
         return;
@@ -105,7 +117,7 @@ block extend_heap(block* last, size_t aligned_size){
     return brk;
 }
 
-void* malloc(size_t size) {
+void* MALLOC(size_t size) {
     MM_MALLOC_CALL();
     if (size == 0) return NULL; 
 
@@ -143,13 +155,13 @@ void* malloc(size_t size) {
 // memory chunks of size size_of (of objects of size_of)
 // properly aligned for object
 // if succeeds, initialize all bytes to 0.
-void* calloc(size_t len, size_t size_of) {
+void* CALLOC(size_t len, size_t size_of) {
     MM_CALLOC_CALL();
     if (size_of != 0 && len > (SIZE_MAX / size_of)) {
         return NULL;
     }
     size_t total_bytes = len * size_of;
-    unsigned char* p= (unsigned char*) malloc(total_bytes);
+    unsigned char* p= (unsigned char*) MALLOC(total_bytes);
     if (p == NULL) {
         return NULL;
     }

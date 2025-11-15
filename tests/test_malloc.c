@@ -4,10 +4,13 @@
 
 #include "acutest.h"
 #include <internal.h>
-#include <malloc/malloc.h>
 #include "mm_debug.h"
 
 extern block head;
+
+#define MALLOC_UNDER_TESTING mm_malloc
+#define CALLOC_UNDER_TESTING mm_calloc
+#define FREE_UNDER_TESTING mm_free
 
 static inline int is_aligned(void* p) {
     return ((uintptr_t)p % _Alignof(max_align_t)) == 0;
@@ -58,36 +61,36 @@ static void test_align_up(void) {
 }
 
 static void test_invalid_addr_for_is_valid_addr(void) {
-    void *p = malloc(1);
+    void *p = MALLOC_UNDER_TESTING(1);
     ensure_my_malloc_is_called();
     TEST_CHECK(p != NULL);
     p = (char*)p + sizeof(struct s_block);
     TEST_CHECK(is_addr_valid_heap_addr(p) == 0);
-    free(p);
+    FREE_UNDER_TESTING(p);
     ensure_my_free_is_called();
 }
 
 static void test_valid_addr_for_is_valid_addr(void) {
-    void *p = malloc(1);
+    void *p = MALLOC_UNDER_TESTING(1);
     ensure_my_malloc_is_called();
     TEST_CHECK(p != NULL);
     TEST_CHECK(is_addr_valid_heap_addr(p) == 1);
-    free(p);
+    FREE_UNDER_TESTING(p);
     ensure_my_free_is_called();
 }
 
 // malloc(0) is expected to return NULL pointer
 static void test_malloc_zero(void) {
-    void *p = malloc(0);
+    void *p = MALLOC_UNDER_TESTING(0);
     ensure_my_malloc_is_called();
     TEST_CHECK(p == NULL);
-    free(p);
+    FREE_UNDER_TESTING(p);
     ensure_my_free_is_called();
 }
 
 static void test_header_alignment_and_size(void) {
     size_t requested_bytes = 1;
-    void *p = malloc(requested_bytes);
+    void *p = MALLOC_UNDER_TESTING(requested_bytes);
     ensure_my_malloc_is_called();
     TEST_CHECK(p != NULL);
 
@@ -105,32 +108,32 @@ static void test_header_alignment_and_size(void) {
     TEST_MSG("size_of_block must aligned %lu != %lu",
          expected_block_size,
          align_up_fundamental(size_of_block));
-    free(p);
+    FREE_UNDER_TESTING(p);
     ensure_my_free_is_called();
 }
 
 static void test_malloc_allocated_memory_aligned(void) {
-    void *p = malloc(31);
+    void *p = MALLOC_UNDER_TESTING(31);
     ensure_my_malloc_is_called();
     TEST_CHECK(p != NULL);
     TEST_CHECK(is_aligned(p));
-    free(p);
+    FREE_UNDER_TESTING(p);
     ensure_my_free_is_called();
 }
 
 static void test_calloc_zero_fill(void) {
     size_t n = 16, sz = 8;
-    unsigned char *p = (unsigned char *)calloc(n, sz);
+    unsigned char *p = (unsigned char *)CALLOC_UNDER_TESTING(n, sz);
     ensure_my_calloc_is_called();
     TEST_ASSERT(p != NULL);
     for (size_t i = 0; i < n*sz; ++i) TEST_CHECK(p[i] == 0);
-    free(p);
+    FREE_UNDER_TESTING(p);
     ensure_my_free_is_called();
 }
 
 static void test_free(void) {
     size_t requested_bytes = 1;
-    void *p = malloc(requested_bytes);
+    void *p = MALLOC_UNDER_TESTING(requested_bytes);
     ensure_my_malloc_is_called();
     TEST_CHECK(p != NULL);
     free(p);
