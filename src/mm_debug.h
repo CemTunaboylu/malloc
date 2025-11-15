@@ -25,6 +25,16 @@
   #define MM_RESET_MALLOC_CALL_MARKER() (malloc_called = 0)
   #define MM_ASSERT_MALLOC_CALLED(times) assert(malloc_called == times)
 
+  int realloc_called;
+  #define MM_REALLOC_CALL() (realloc_called += 1)
+  #define MM_RESET_REALLOC_MARKER() (realloc_called = 0)
+  #define MM_ASSERT_REALLOC_CALLED(times) assert(realloc_called == times)
+
+  int realloc_enough_size;
+  #define MM_REALLOC_ENOUGH_SIZE() (realloc_enough_size += 1)
+  #define MM_RESET_REALLOC_ENOUGH_SIZE_MARKER() (realloc_enough_size = 0)
+  #define MM_ASSERT_REALLOC_ENOUGH_SIZE(times) assert(realloc_enough_size == times)
+
   int fuse_fwd_called;
   #define MM_FUSE_FWD_CALL() (fuse_fwd_called += 1)
   #define MM_RESET_FUSE_FWD_CALL_MARKER() (fuse_fwd_called = 0)
@@ -59,6 +69,14 @@
   #define MM_MALLOC_CALL() ((void)0)
   #define MM_RESET_MALLOC_CALL_MARKER() ((void)0)
   #define MM_ASSERT_MALLOC_CALLED() ((void)0)
+
+  #define MM_REALLOC_CALL() ((void)0)
+  #define MM_RESET_REALLOC_MARKER() ((void)0)
+  #define MM_ASSERT_REALLOC_CALLED(times) ((void)0)
+
+  #define MM_REALLOC_ENOUGH_SIZE() ((void)0)
+  #define MM_RESET_REALLOC_ENOUGH_SIZE_MARKER() ((void)0)
+  #define MM_ASSERT_REALLOC_ENOUGH_SIZE(times) ((void)0)
 
   #define MM_FUSE_FWD_CALL() ((void)0)
   #define MM_RESET_FUSE_FWD_CALL_MARKER() ((void)0) 

@@ -1,0 +1,445 @@
+=== test_forward_fusion_2_blocks: start ===
+[ size:208 - free:0 ]
+=== test_forward_fusion_2_blocks: post-malloc ===
+[ size:208 - free:0 ]
+[ size:16 - free:0 ]
+[ size:16 - free:0 ]
+=== test_forward_fusion_2_blocks: after artificially freeing blocks ===
+[ size:208 - free:0 ]
+[ size:16 - free:1 ]
+[ size:16 - free:1 ]
+=== test_forward_fusion_2_blocks: post-fwd-fusion ===
+[ size:208 - free:0 ]
+[ size:72 - free:1 ]
+=== test_forward_fusion_2_blocks: end ===
+=== test_backward_fusion_2_blocks: start ===
+[ size:208 - free:0 ]
+=== test_backward_fusion_2_blocks: post-malloc ===
+[ size:208 - free:0 ]
+[ size:16 - free:0 ]
+[ size:16 - free:0 ]
+=== test_backward_fusion_2_blocks: after artificially freeing blocks ===
+[ size:208 - free:0 ]
+[ size:16 - free:1 ]
+[ size:16 - free:1 ]
+=== test_backward_fusion_2_blocks: post-bwd-fusion ===
+[ size:208 - free:0 ]
+[ size:72 - free:1 ]
+=== test_backward_fusion_2_blocks: end ===
+=== test_free_no_release_or_fusion: start ===
+[ size:208 - free:0 ]
+=== test_free_no_release_or_fusion: post-malloc ===
+[ size:208 - free:0 ]
+[ size:32 - free:0 ]
+[ size:32 - free:0 ]
+=== test_free_no_release_or_fusion: post-free ===
+[ size:208 - free:0 ]
+[ size:32 - free:1 ]
+[ size:32 - free:0 ]
+=== test_free_no_release_or_fusion: post-free the rest ===
+[ size:208 - free:0 ]
+=== test_free_no_release_or_fusion: end ===
+=== test_free_with_fusion_no_release: start ===
+[ size:208 - free:0 ]
+=== test_free_with_fusion_no_release: post-malloc ===
+[ size:208 - free:0 ]
+[ size:32 - free:0 ]
+[ size:32 - free:0 ]
+[ size:32 - free:0 ]
+[ size:32 - free:0 ]
+[ size:32 - free:0 ]
+=== test_free_with_fusion_no_release: after artificially freeing blocks ===
+[ size:208 - free:0 ]
+[ size:32 - free:1 ]
+[ size:32 - free:1 ]
+[ size:32 - free:1 ]
+[ size:32 - free:1 ]
+[ size:32 - free:0 ]
+=== test_free_with_fusion_no_release: post-free middle ===
+[ size:208 - free:0 ]
+[ size:248 - free:1 ]
+[ size:32 - free:0 ]
+=== test_free_with_fusion_no_release: post-free last ===
+[ size:208 - free:0 ]
+=== test_free_with_fusion_no_release: end ===
+=== test_forward_fusion_2_blocks: start ===
+[ size:224 - free:0 ]
+=== test_forward_fusion_2_blocks: post-malloc ===
+[ size:224 - free:0 ]
+[ size:16 - free:0 ]
+[ size:16 - free:0 ]
+=== test_forward_fusion_2_blocks: after artificially freeing blocks ===
+[ size:224 - free:0 ]
+[ size:16 - free:1 ]
+[ size:16 - free:1 ]
+=== test_forward_fusion_2_blocks: post-fwd-fusion ===
+[ size:224 - free:0 ]
+[ size:72 - free:1 ]
+=== test_forward_fusion_2_blocks: end ===
+=== test_backward_fusion_2_blocks: start ===
+[ size:224 - free:0 ]
+=== test_backward_fusion_2_blocks: post-malloc ===
+[ size:224 - free:0 ]
+[ size:16 - free:0 ]
+[ size:16 - free:0 ]
+=== test_backward_fusion_2_blocks: after artificially freeing blocks ===
+[ size:224 - free:0 ]
+[ size:16 - free:1 ]
+[ size:16 - free:1 ]
+=== test_backward_fusion_2_blocks: post-bwd-fusion ===
+[ size:224 - free:0 ]
+[ size:72 - free:1 ]
+=== test_backward_fusion_2_blocks: end ===
+=== test_free_no_release_or_fusion: start ===
+[ size:224 - free:0 ]
+=== test_free_no_release_or_fusion: post-malloc ===
+[ size:224 - free:0 ]
+[ size:32 - free:0 ]
+[ size:32 - free:0 ]
+=== test_free_no_release_or_fusion: post-free ===
+[ size:224 - free:0 ]
+[ size:32 - free:1 ]
+[ size:32 - free:0 ]
+=== test_free_no_release_or_fusion: post-free the rest ===
+[ size:224 - free:0 ]
+=== test_free_no_release_or_fusion: end ===
+=== test_free_with_fusion_no_release: start ===
+[ size:224 - free:0 ]
+=== test_free_with_fusion_no_release: post-malloc ===
+[ size:224 - free:0 ]
+[ size:32 - free:0 ]
+[ size:32 - free:0 ]
+[ size:32 - free:0 ]
+[ size:32 - free:0 ]
+[ size:32 - free:0 ]
+=== test_free_with_fusion_no_release: after artificially freeing blocks ===
+[ size:224 - free:0 ]
+[ size:32 - free:1 ]
+[ size:32 - free:1 ]
+[ size:32 - free:1 ]
+[ size:32 - free:1 ]
+[ size:32 - free:0 ]
+=== test_free_with_fusion_no_release: post-free middle ===
+[ size:224 - free:0 ]
+[ size:248 - free:1 ]
+[ size:32 - free:0 ]
+=== test_free_with_fusion_no_release: post-free last ===
+[ size:224 - free:0 ]
+=== test_free_with_fusion_no_release: end ===
+=== test_realloc_grow_and_shrink: start ===
+[ size:224 - free:0 ]
+=== test_realloc_grow_and_shrink: post-malloc with size 10 and setting values for data ===
+[ size:224 - free:0 ]
+[ size:16 - free:0 ]
+=== test_forward_fusion_2_blocks: start ===
+[ size:240 - free:0 ]
+=== test_forward_fusion_2_blocks: post-malloc ===
+[ size:240 - free:0 ]
+[ size:16 - free:0 ]
+[ size:16 - free:0 ]
+=== test_forward_fusion_2_blocks: after artificially freeing blocks ===
+[ size:240 - free:0 ]
+[ size:16 - free:1 ]
+[ size:16 - free:1 ]
+=== test_forward_fusion_2_blocks: post-fwd-fusion ===
+[ size:240 - free:0 ]
+[ size:72 - free:1 ]
+=== test_forward_fusion_2_blocks: end ===
+=== test_backward_fusion_2_blocks: start ===
+[ size:240 - free:0 ]
+=== test_backward_fusion_2_blocks: post-malloc ===
+[ size:240 - free:0 ]
+[ size:16 - free:0 ]
+[ size:16 - free:0 ]
+=== test_backward_fusion_2_blocks: after artificially freeing blocks ===
+[ size:240 - free:0 ]
+[ size:16 - free:1 ]
+[ size:16 - free:1 ]
+=== test_backward_fusion_2_blocks: post-bwd-fusion ===
+[ size:240 - free:0 ]
+[ size:72 - free:1 ]
+=== test_backward_fusion_2_blocks: end ===
+=== test_free_no_release_or_fusion: start ===
+[ size:240 - free:0 ]
+=== test_free_no_release_or_fusion: post-malloc ===
+[ size:240 - free:0 ]
+[ size:32 - free:0 ]
+[ size:32 - free:0 ]
+=== test_free_no_release_or_fusion: post-free ===
+[ size:240 - free:0 ]
+[ size:32 - free:1 ]
+[ size:32 - free:0 ]
+=== test_free_no_release_or_fusion: post-free the rest ===
+[ size:240 - free:0 ]
+=== test_free_no_release_or_fusion: end ===
+=== test_free_with_fusion_no_release: start ===
+[ size:240 - free:0 ]
+=== test_free_with_fusion_no_release: post-malloc ===
+[ size:240 - free:0 ]
+[ size:32 - free:0 ]
+[ size:32 - free:0 ]
+[ size:32 - free:0 ]
+[ size:32 - free:0 ]
+[ size:32 - free:0 ]
+=== test_free_with_fusion_no_release: after artificially freeing blocks ===
+[ size:240 - free:0 ]
+[ size:32 - free:1 ]
+[ size:32 - free:1 ]
+[ size:32 - free:1 ]
+[ size:32 - free:1 ]
+[ size:32 - free:0 ]
+=== test_free_with_fusion_no_release: post-free middle ===
+[ size:240 - free:0 ]
+[ size:248 - free:1 ]
+[ size:32 - free:0 ]
+=== test_free_with_fusion_no_release: post-free last ===
+[ size:240 - free:0 ]
+=== test_free_with_fusion_no_release: end ===
+=== test_copy_block: start ===
+[ size:240 - free:0 ]
+=== test_copy_block: post-malloc with size 36 and setting values for data ===
+[ size:240 - free:0 ]
+[ size:40 - free:0 ]
+=== test_copy_block: after copy block ===
+[ size:240 - free:0 ]
+[ size:40 - free:0 ]
+[ size:40 - free:0 ]
+=== test_realloc_grow_and_shrink: start ===
+[ size:240 - free:0 ]
+=== test_realloc_grow_and_shrink: post-malloc with size 10 and setting values for data ===
+[ size:240 - free:0 ]
+[ size:16 - free:0 ]
+=== test_forward_fusion_2_blocks: start ===
+[ size:240 - free:0 ]
+=== test_forward_fusion_2_blocks: post-malloc ===
+[ size:240 - free:0 ]
+[ size:16 - free:0 ]
+[ size:16 - free:0 ]
+=== test_forward_fusion_2_blocks: after artificially freeing blocks ===
+[ size:240 - free:0 ]
+[ size:16 - free:1 ]
+[ size:16 - free:1 ]
+=== test_forward_fusion_2_blocks: post-fwd-fusion ===
+[ size:240 - free:0 ]
+[ size:72 - free:1 ]
+=== test_forward_fusion_2_blocks: end ===
+=== test_backward_fusion_2_blocks: start ===
+[ size:240 - free:0 ]
+=== test_backward_fusion_2_blocks: post-malloc ===
+[ size:240 - free:0 ]
+[ size:16 - free:0 ]
+[ size:16 - free:0 ]
+=== test_backward_fusion_2_blocks: after artificially freeing blocks ===
+[ size:240 - free:0 ]
+[ size:16 - free:1 ]
+[ size:16 - free:1 ]
+=== test_backward_fusion_2_blocks: post-bwd-fusion ===
+[ size:240 - free:0 ]
+[ size:72 - free:1 ]
+=== test_backward_fusion_2_blocks: end ===
+=== test_free_no_release_or_fusion: start ===
+[ size:240 - free:0 ]
+=== test_free_no_release_or_fusion: post-malloc ===
+[ size:240 - free:0 ]
+[ size:32 - free:0 ]
+[ size:32 - free:0 ]
+=== test_free_no_release_or_fusion: post-free ===
+[ size:240 - free:0 ]
+[ size:32 - free:1 ]
+[ size:32 - free:0 ]
+=== test_free_no_release_or_fusion: post-free the rest ===
+[ size:240 - free:0 ]
+=== test_free_no_release_or_fusion: end ===
+=== test_free_with_fusion_no_release: start ===
+[ size:240 - free:0 ]
+=== test_free_with_fusion_no_release: post-malloc ===
+[ size:240 - free:0 ]
+[ size:32 - free:0 ]
+[ size:32 - free:0 ]
+[ size:32 - free:0 ]
+[ size:32 - free:0 ]
+[ size:32 - free:0 ]
+=== test_free_with_fusion_no_release: after artificially freeing blocks ===
+[ size:240 - free:0 ]
+[ size:32 - free:1 ]
+[ size:32 - free:1 ]
+[ size:32 - free:1 ]
+[ size:32 - free:1 ]
+[ size:32 - free:0 ]
+=== test_free_with_fusion_no_release: post-free middle ===
+[ size:240 - free:0 ]
+[ size:248 - free:1 ]
+[ size:32 - free:0 ]
+=== test_free_with_fusion_no_release: post-free last ===
+[ size:240 - free:0 ]
+=== test_free_with_fusion_no_release: end ===
+=== test_copy_block: start ===
+[ size:240 - free:0 ]
+=== test_copy_block: post-malloc with size 36 and setting values for data ===
+[ size:240 - free:0 ]
+[ size:40 - free:0 ]
+=== test_copy_block: after copy block ===
+[ size:240 - free:0 ]
+[ size:40 - free:0 ]
+[ size:40 - free:0 ]
+=== test_realloc_grow_and_shrink: start ===
+[ size:240 - free:0 ]
+=== test_realloc_grow_and_shrink: post-malloc with size 10 and setting values for data ===
+[ size:240 - free:0 ]
+[ size:16 - free:0 ]
+=== test_forward_fusion_2_blocks: start ===
+[ size:240 - free:0 ]
+=== test_forward_fusion_2_blocks: post-malloc ===
+[ size:240 - free:0 ]
+[ size:16 - free:0 ]
+[ size:16 - free:0 ]
+=== test_forward_fusion_2_blocks: after artificially freeing blocks ===
+[ size:240 - free:0 ]
+[ size:16 - free:1 ]
+[ size:16 - free:1 ]
+=== test_forward_fusion_2_blocks: post-fwd-fusion ===
+[ size:240 - free:0 ]
+[ size:72 - free:1 ]
+=== test_forward_fusion_2_blocks: end ===
+=== test_backward_fusion_2_blocks: start ===
+[ size:240 - free:0 ]
+=== test_backward_fusion_2_blocks: post-malloc ===
+[ size:240 - free:0 ]
+[ size:16 - free:0 ]
+[ size:16 - free:0 ]
+=== test_backward_fusion_2_blocks: after artificially freeing blocks ===
+[ size:240 - free:0 ]
+[ size:16 - free:1 ]
+[ size:16 - free:1 ]
+=== test_backward_fusion_2_blocks: post-bwd-fusion ===
+[ size:240 - free:0 ]
+[ size:72 - free:1 ]
+=== test_backward_fusion_2_blocks: end ===
+=== test_free_no_release_or_fusion: start ===
+[ size:240 - free:0 ]
+=== test_free_no_release_or_fusion: post-malloc ===
+[ size:240 - free:0 ]
+[ size:32 - free:0 ]
+[ size:32 - free:0 ]
+=== test_free_no_release_or_fusion: post-free ===
+[ size:240 - free:0 ]
+[ size:32 - free:1 ]
+[ size:32 - free:0 ]
+=== test_free_no_release_or_fusion: post-free the rest ===
+[ size:240 - free:0 ]
+=== test_free_no_release_or_fusion: end ===
+=== test_free_with_fusion_no_release: start ===
+[ size:240 - free:0 ]
+=== test_free_with_fusion_no_release: post-malloc ===
+[ size:240 - free:0 ]
+[ size:32 - free:0 ]
+[ size:32 - free:0 ]
+[ size:32 - free:0 ]
+[ size:32 - free:0 ]
+[ size:32 - free:0 ]
+=== test_free_with_fusion_no_release: after artificially freeing blocks ===
+[ size:240 - free:0 ]
+[ size:32 - free:1 ]
+[ size:32 - free:1 ]
+[ size:32 - free:1 ]
+[ size:32 - free:1 ]
+[ size:32 - free:0 ]
+=== test_free_with_fusion_no_release: post-free middle ===
+[ size:240 - free:0 ]
+[ size:248 - free:1 ]
+[ size:32 - free:0 ]
+=== test_free_with_fusion_no_release: post-free last ===
+[ size:240 - free:0 ]
+=== test_free_with_fusion_no_release: end ===
+=== test_copy_block: start ===
+[ size:240 - free:0 ]
+=== test_copy_block: post-malloc with size 36 and setting values for data ===
+[ size:240 - free:0 ]
+[ size:40 - free:0 ]
+=== test_copy_block: after copy block ===
+[ size:240 - free:0 ]
+[ size:40 - free:0 ]
+[ size:40 - free:0 ]
+=== test_realloc_grow_and_shrink: start ===
+[ size:240 - free:0 ]
+=== test_realloc_grow_and_shrink: post-malloc with size 10 and setting values for data ===
+[ size:240 - free:0 ]
+[ size:16 - free:0 ]
+=== test_forward_fusion_2_blocks: start ===
+[ size:240 - free:0 ]
+=== test_forward_fusion_2_blocks: post-malloc ===
+[ size:240 - free:0 ]
+[ size:16 - free:0 ]
+[ size:16 - free:0 ]
+=== test_forward_fusion_2_blocks: after artificially freeing blocks ===
+[ size:240 - free:0 ]
+[ size:16 - free:1 ]
+[ size:16 - free:1 ]
+=== test_forward_fusion_2_blocks: post-fwd-fusion ===
+[ size:240 - free:0 ]
+[ size:72 - free:1 ]
+=== test_forward_fusion_2_blocks: end ===
+=== test_backward_fusion_2_blocks: start ===
+[ size:240 - free:0 ]
+=== test_backward_fusion_2_blocks: post-malloc ===
+[ size:240 - free:0 ]
+[ size:16 - free:0 ]
+[ size:16 - free:0 ]
+=== test_backward_fusion_2_blocks: after artificially freeing blocks ===
+[ size:240 - free:0 ]
+[ size:16 - free:1 ]
+[ size:16 - free:1 ]
+=== test_backward_fusion_2_blocks: post-bwd-fusion ===
+[ size:240 - free:0 ]
+[ size:72 - free:1 ]
+=== test_backward_fusion_2_blocks: end ===
+=== test_free_no_release_or_fusion: start ===
+[ size:240 - free:0 ]
+=== test_free_no_release_or_fusion: post-malloc ===
+[ size:240 - free:0 ]
+[ size:32 - free:0 ]
+[ size:32 - free:0 ]
+=== test_free_no_release_or_fusion: post-free ===
+[ size:240 - free:0 ]
+[ size:32 - free:1 ]
+[ size:32 - free:0 ]
+=== test_free_no_release_or_fusion: post-free the rest ===
+[ size:240 - free:0 ]
+=== test_free_no_release_or_fusion: end ===
+=== test_free_with_fusion_no_release: start ===
+[ size:240 - free:0 ]
+=== test_free_with_fusion_no_release: post-malloc ===
+[ size:240 - free:0 ]
+[ size:32 - free:0 ]
+[ size:32 - free:0 ]
+[ size:32 - free:0 ]
+[ size:32 - free:0 ]
+[ size:32 - free:0 ]
+=== test_free_with_fusion_no_release: after artificially freeing blocks ===
+[ size:240 - free:0 ]
+[ size:32 - free:1 ]
+[ size:32 - free:1 ]
+[ size:32 - free:1 ]
+[ size:32 - free:1 ]
+[ size:32 - free:0 ]
+=== test_free_with_fusion_no_release: post-free middle ===
+[ size:240 - free:0 ]
+[ size:248 - free:1 ]
+[ size:32 - free:0 ]
+=== test_free_with_fusion_no_release: post-free last ===
+[ size:240 - free:0 ]
+=== test_free_with_fusion_no_release: end ===
+=== test_copy_block: start ===
+[ size:240 - free:0 ]
+=== test_copy_block: post-malloc with size 36 and setting values for data ===
+[ size:240 - free:0 ]
+[ size:40 - free:0 ]
+=== test_copy_block: after copy block ===
+[ size:240 - free:0 ]
+[ size:40 - free:0 ]
+[ size:40 - free:0 ]
+=== test_realloc_grow_and_shrink: start ===
+[ size:240 - free:0 ]
+=== test_realloc_grow_and_shrink: post-malloc with size 10 and setting values for data ===
+[ size:240 - free:0 ]
+[ size:16 - free:0 ]

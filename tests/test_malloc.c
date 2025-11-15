@@ -22,6 +22,7 @@ extern block head;
 #define CALLOC_UNDER_TESTING calloc
 #define FREE_UNDER_TESTING free
 #define MALLOC_UNDER_TESTING malloc
+#define REALLOC_UNDER_TESTING realloc
 #define CURRENT_BRK mm_sbrk(0)
 
 static size_t base_total_blocks;
@@ -114,6 +115,17 @@ void ensure_my_calloc_is_called(void) {
     MM_ASSERT_CALLOC_CALLED(1);
     MM_RESET_CALLOC_CALL_MARKER();
 }
+
+void ensure_my_realloc_called(void) {
+    MM_ASSERT_REALLOC_CALLED(1);
+    MM_RESET_REALLOC_MARKER();
+}
+
+void ensure_realloc_enough_size(void) {
+    MM_ASSERT_REALLOC_ENOUGH_SIZE(1);
+    MM_RESET_REALLOC_ENOUGH_SIZE_MARKER();
+}
+
 
 static void test_align_up(void) {
     size_t one_short = MAX_ALIGNMENT - 1;
@@ -440,6 +452,45 @@ static void test_copy_block(void) {
     LOG("=== %s: end ===\n", __func__);
 }
 
+static void test_realloc_grow_and_shrink(void) {
+    LOG("=== %s: start ===\n", __func__);
+
+    const size_t n = 10;
+
+    char *p = (char*)MALLOC_UNDER_TESTING(n);
+    ensure_my_malloc_is_called();
+    TEST_CHECK(p);
+    for (int i=0;i<(int)n;i++) p[i]=(char)i;
+
+    LOG("\tpost-malloc with size %lu and setting values for data ===\n", n);
+
+    const size_t re_grow_n = 100;
+
+    char *q = (char*)REALLOC_UNDER_TESTING(p, re_grow_n);
+    ensure_my_realloc_called();
+    ensure_my_malloc_is_called();
+    ensure_my_free_is_called();
+    ensure_freed();
+    TEST_ASSERT(q);
+    for (int i=0;i<(int)n;i++) TEST_CHECK(q[i]==(char)i);
+
+    LOG("\tafter growing realloc with %lu ===\n", re_grow_n);
+
+    const size_t re_shrink_n = 5;
+    char *r = (char*)REALLOC_UNDER_TESTING(q, re_shrink_n);
+    ensure_my_realloc_called();
+    ensure_realloc_enough_size();
+    TEST_ASSERT(r);
+    for (int i=0;i<(int)re_shrink_n;i++) TEST_CHECK(r[i]==(char)i);
+
+    LOG("\tafter shrinking realloc with %lu ===\n", re_shrink_n);
+
+    FREE_UNDER_TESTING(r);
+    ensure_my_free_is_called();
+    ensure_freed();
+    LOG("=== %s: end ===\n", __func__);
+}
+
 TEST_LIST = {
     { "test_align_up",                       test_align_up },
     { "test_invalid_addr_outside_before_for_is_valid_addr",                       test_invalid_addr_outside_before_for_is_valid_addr },
@@ -454,6 +505,7 @@ TEST_LIST = {
     { "test_free_no_release_or_fusion",              test_free_no_release_or_fusion },
     { "test_free_with_fusion_no_release",              test_free_with_fusion_no_release },
     { "test_copy_block",  test_copy_block },
+    { "realloc_grow_shrink",  test_realloc_grow_and_shrink },
 #ifdef ENABLE_LOG
     { "free_resources",              free_resources},
 #endif

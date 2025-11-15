@@ -9,6 +9,7 @@
 #define CALLOC calloc
 #define FREE free
 #define MALLOC malloc   
+#define REALLOC realloc   
 
 #define align(x) (align_up_fundamental(x))
 #define CURRENT_BRK mm_sbrk(0)
@@ -65,53 +66,20 @@ block first_fit_find(block head, block* tail, size_t aligned_size){
     return curr;
 }
 
-void split_block(block b, size_t aligned_size_to_shrink){
-    block rem_free = (block)((char*)allocated_memory(b) + aligned_size_to_shrink);
-    rem_free->size =  b->size - aligned_size_to_shrink - SIZE_OF_BLOCK;
-    rem_free->next = b->next;
-    rem_free->prev= b;
-    if (b->next) {
-        b->next->prev = rem_free;
+void fuse_next(block b){
+    if (b->free == 0) {
+        return;
     }
-    rem_free->free = 1;
-    b->size = aligned_size_to_shrink;
-    b->next = rem_free;
-}
-
-block reconstruct_from_user_memory(void* p) {
-    return (block)((char*)p - BLOCK_OFFSET);
-}
-
-int is_addr_valid_heap_addr(void* p) {
-    if (head == NULL) return 0;
-    if ((void*) head > p || CURRENT_BRK < p) return 0;
-
-    block blk = reconstruct_from_user_memory(p);
-    return (p == (void*)allocated_memory(blk));
-}
-
-/* ----- allocators ----- */
-
-void* malloc(size_t);
-
-// allocate memory for an array of length len consisting of 
-// memory chunks of size size_of (of objects of size_of)
-// properly aligned for object
-// if succeeds, initialize all bytes to 0.
-void* CALLOC(size_t len, size_t size_of) {
-    MM_CALLOC_CALL();
-    if (size_of != 0 && len > (SIZE_MAX / size_of)) {
-        return NULL;
+    if (b->next == NULL) {
+        return;
     }
-    size_t total_bytes = len * size_of;
-    unsigned char* p= (unsigned char*) MALLOC(total_bytes);
-    if (p == NULL) {
-        return NULL;
+    block next = b->next;
+    if(next->free) {
+        b->size += SIZE_OF_BLOCK + next->size;
     }
-    for (size_t i=0; i<total_bytes; i++) {
-        p[i] = 0;
-    }
-    return p;
+    b->next = next->next;
+    if (next->next)
+        next->next->prev = b;
 }
 
 void fuse_fwd(block b){
@@ -288,22 +256,40 @@ void* MALLOC(size_t size) {
     return (void*)allocated_memory(blk);
 } 
 
-// allocate memory for an array of length len consisting of 
-// memory chunks of size size_of (of objects of size_of)
-// properly aligned for object
-// if succeeds, initialize all bytes to 0.
-void* CALLOC(size_t len, size_t size_of) {
-    MM_CALLOC_CALL();
-    if (size_of != 0 && len > (SIZE_MAX / size_of)) {
-        return NULL;
+void* realloc(void* p, size_t size){
+    MM_REALLOC_CALL();
+    // if we don't have anywhere to realloc, it is effectively a malloc
+    if (p == NULL) return malloc(size); 
+
+    if (!is_addr_valid_heap_addr(p)) return NULL;
+
+    block blk = reconstruct_from_user_memory(p);
+
+    // the block must be aligned
+    size = align_up_fundamental(size);
+
+    if (blk->size == size ) return p;
+
+    if (blk->size > size) {
+        MM_REALLOC_ENOUGH_SIZE();
+        if (is_splittable(blk, size)) split_block(blk, size);
+        return p;
     }
-    size_t total_bytes = len * size_of;
-    unsigned char* p= (unsigned char*) MALLOC(total_bytes);
-    if (p == NULL) {
-        return NULL;
+
+    while (blk->next && blk->size < size) {
+        fuse_next(blk);
     }
-    for (size_t i=0; i<total_bytes; i++) {
-        p[i] = 0;
+    // we have done all that work for nothing...
+    if (blk->size < size) {
+        void* n = MALLOC(size);
+        if (n == NULL) {return p;}
+        block blk_n = reconstruct_from_user_memory(n);
+        block blk_p = reconstruct_from_user_memory(p);
+        deep_copy_block(blk_p, blk_n);
+        free(p);
+        return n;
     }
+    else if (is_splittable(blk, size)) split_block(blk,size);
+
     return p;
 }
