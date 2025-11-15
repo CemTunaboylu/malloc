@@ -285,12 +285,6 @@ void* realloc(void* p, size_t size){
 
     if (blk->size == size ) return p;
 
-    if (blk->size > size) {
-        MM_REALLOC_ENOUGH_SIZE();
-        if (is_splittable(blk, size)) split_block(blk, size);
-        return p;
-    }
-
     while (blk->next && blk->size < size) {
         fuse_next(blk);
     }
@@ -304,7 +298,10 @@ void* realloc(void* p, size_t size){
         free(p);
         return n;
     }
-    else if (is_splittable(blk, size)) split_block(blk,size);
+    else if (is_splittable(blk, size)) {
+        MM_REALLOC_ENOUGH_SIZE();
+        split_block(blk,size);
+    } 
 
     return p;
 }
