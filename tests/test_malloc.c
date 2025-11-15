@@ -384,7 +384,7 @@ static void test_free_with_fusion_no_release(void) {
     ensure_fuse_fwd_is_called();
     ensure_fuse_bwd_is_called();
 
-    LOG("\tpost-free middle ===\n", __func__);
+    LOG("\tpost-free middle ===\n");
 
     size_t total_bytes_after_fusion = align_up_fundamental(base_bytes)*(n-1) + sizeof(struct s_block)*(n-2);
     TEST_CHECK_(after_fusion_head->size == total_bytes_after_fusion,
@@ -412,7 +412,7 @@ static void test_copy_block(void) {
     TEST_CHECK(p);
     for (size_t i=0;i<src_len;i++) p[i]=i;
 
-    LOG("\tpost-malloc with size %lu and setting values for data ===\n", __func__, src_n);
+    LOG("\tpost-malloc with size %lu and setting values for data ===\n", src_n);
 
     const size_t to_copy_len = 9;
     const size_t to_copy_size_of = 4;

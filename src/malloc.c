@@ -153,6 +153,61 @@ void fuse_bwd(block* b){
     *b = cursor;
 }
 
+int is_addr_valid_heap_addr(void* p) {
+    if (head == NULL) return 0;
+    if ((void*) head > p || CURRENT_BRK < p) return 0;
+
+    block blk = reconstruct_from_user_memory(p);
+    return (p == (void*)allocated_memory(blk));
+}
+
+int is_splittable(block blk, size_t aligned_size) {
+    size_t remaining_size = blk->size - aligned_size;
+    size_t min_splittable_total_block_size = SIZE_OF_BLOCK+ADDITIONAL_BYTES_FOR_SPLITTING;
+    return (remaining_size > min_splittable_total_block_size); 
+}
+
+void split_block(block b, size_t aligned_size_to_shrink){
+    block rem_free = (block)((char*)allocated_memory(b) + aligned_size_to_shrink);
+    rem_free->size =  b->size - aligned_size_to_shrink - SIZE_OF_BLOCK;
+    rem_free->next = b->next;
+    rem_free->prev= b;
+    if (b->next) {
+        b->next->prev = rem_free;
+    }
+    rem_free->free = 1;
+    b->size = aligned_size_to_shrink;
+    b->next = rem_free;
+}
+
+block reconstruct_from_user_memory(void* p) {
+    return (block)((char*)p - BLOCK_OFFSET);
+}
+
+/* ----- allocators ----- */
+
+void* malloc(size_t);
+
+// allocate memory for an array of length len consisting of 
+// memory chunks of size size_of (of objects of size_of)
+// properly aligned for object
+// if succeeds, initialize all bytes to 0.
+void* CALLOC(size_t len, size_t size_of) {
+    MM_CALLOC_CALL();
+    if (size_of != 0 && len > (SIZE_MAX / size_of)) {
+        return NULL;
+    }
+    size_t total_bytes = len * size_of;
+    unsigned char* p= (unsigned char*) MALLOC(total_bytes);
+    if (p == NULL) {
+        return NULL;
+    }
+    for (size_t i=0; i<total_bytes; i++) {
+        p[i] = 0;
+    }
+    return p;
+}
+
 void FREE(void* p) {
     if (p == NULL) return;
     MM_FREE_CALL();
@@ -227,12 +282,9 @@ void* MALLOC(size_t size) {
 
     blk->free = 0;
 
-    size_t remaining_size = blk->size - aligned_size;
-    size_t min_splittable_total_block_size = SIZE_OF_BLOCK+ADDITIONAL_BYTES_FOR_SPLITTING;
-    if (remaining_size > min_splittable_total_block_size) {
+    if (is_splittable(blk, aligned_size)) {
         split_block(blk, aligned_size);
     }
-
     return (void*)allocated_memory(blk);
 } 
 
