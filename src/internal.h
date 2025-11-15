@@ -18,6 +18,7 @@ long* allocated_memory(block b);
 block reconstruct_from_user_memory(void* p); 
 
 #ifdef TESTING
+    void deep_copy_block(block src, block to);
     int is_addr_valid_heap_addr(void *p);
     void fuse_fwd(block);
     void fuse_bwd(block*);

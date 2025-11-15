@@ -428,6 +428,48 @@ static void test_free_with_fusion_no_release(void) {
     LOG("=== %s: end ===\n", __func__);
 }
 
+static void test_copy_block(void) {
+    LOG("=== %s: start ===\n", __func__);
+    PRINT_BLOCK_LIST();
+
+    const size_t src_len = 9;
+    const size_t src_size_of = 4;
+    const size_t src_n = src_len * src_size_of;
+
+    int *p = (int*)MALLOC_UNDER_TESTING(src_n);
+    ensure_my_malloc_is_called();
+    TEST_CHECK(p);
+    for (size_t i=0;i<src_len;i++) p[i]=i;
+
+    LOG("=== %s: post-malloc with size %lu and setting values for data ===\n", __func__, src_n);
+    PRINT_BLOCK_LIST();
+
+    const size_t to_copy_len = 9;
+    const size_t to_copy_size_of = 4;
+
+    int *q = (int*)CALLOC_UNDER_TESTING(to_copy_len, to_copy_size_of);
+    ensure_my_calloc_is_called();
+    TEST_ASSERT(q);
+
+    block p_blk = reconstruct_from_user_memory(p);
+    block q_blk = reconstruct_from_user_memory(q);
+
+    deep_copy_block(p_blk, q_blk);
+    LOG("=== %s: after deep copy block ===\n", __func__);
+    PRINT_BLOCK_LIST();
+
+    size_t min = src_len > to_copy_len ? to_copy_len : src_len;
+    for (size_t i=0;i<min;i++) TEST_CHECK_(p[i] == q[i], "%d != %d", p[i], q[i]);
+
+    FREE_UNDER_TESTING(p);
+    ensure_my_free_is_called();
+    ensure_freed();
+
+    FREE_UNDER_TESTING(q);
+    ensure_my_free_is_called();
+    ensure_freed();
+}
+
 TEST_LIST = {
     { "test_align_up",                       test_align_up },
     { "test_invalid_addr_outside_before_for_is_valid_addr",                       test_invalid_addr_outside_before_for_is_valid_addr },
@@ -441,7 +483,7 @@ TEST_LIST = {
     { "test_calloc_zero_fill",              test_calloc_zero_fill },
     { "test_free_no_release_or_fusion",              test_free_no_release_or_fusion },
     { "test_free_with_fusion_no_release",              test_free_with_fusion_no_release },
-    // { "realloc_grow_shrink",  test_realloc_grow_and_shrink },
+    { "test_copy_block",  test_copy_block },
 #ifdef ENABLE_LOG
     { "free_resources",              free_resources},
 #endif

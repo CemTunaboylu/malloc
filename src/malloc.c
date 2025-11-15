@@ -23,6 +23,18 @@ long* allocated_memory(block b) {
     return b->user_memory;
 }
 
+void deep_copy_block(block src, block to) {
+    int* src_user_mem = (int*) allocated_memory(src);
+    int* to_user_mem = (int*) allocated_memory(to);
+
+    size_t min = src->size > to->size ? to->size : src->size;
+
+    for (size_t i = 0; i < min; i++ )
+    {
+        to_user_mem[i] = src_user_mem[i];
+    }
+}
+
 block extend_heap(block* last, size_t aligned_size){
     block brk = CURRENT_BRK;
     size_t total_bytes_to_allocate = SIZE_OF_BLOCK + aligned_size;
