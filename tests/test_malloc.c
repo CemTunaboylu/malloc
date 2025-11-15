@@ -110,8 +110,9 @@ static void test_invalid_addr_outside_before_for_is_valid_addr(void) {
     void *p = MALLOC_UNDER_TESTING(1);
     ensure_my_malloc_is_called();
     TEST_CHECK(p != NULL);
-    void *invalid = (char*)head + sizeof(struct s_block);
+    void *invalid = (char*)head + sizeof(struct s_block)*9;
     TEST_CHECK(is_addr_valid_heap_addr(invalid) == 0);
+    TEST_MSG("address %p should have been invalid since it is before list head %p", invalid, (void*)head);
     FREE_UNDER_TESTING(p);
     ensure_my_free_is_called();
     ensure_freed();
