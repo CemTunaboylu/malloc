@@ -11,11 +11,12 @@
 #define MALLOC malloc   
 #define REALLOC realloc   
 
-#define align(x) (align_up_fundamental(x))
 #define CURRENT_BRK mm_sbrk(0)
-#define SIZE_OF_BLOCK (align_up_fundamental(sizeof(struct s_block)))
-#define BLOCK_OFFSET (offsetof(struct s_block, start_of_alloc_mem))
 #define ADDITIONAL_BYTES_FOR_SPLITTING MAX_ALIGNMENT
+
+static inline size_t align(size_t s) { return align_up_fundamental(s); }
+static const size_t SIZE_OF_BLOCK = sizeof(struct s_block);
+static const size_t BLOCK_OFFSET = offsetof(struct s_block, start_of_alloc_mem);
 
 block head = NULL; 
 static long allocated_bytes;

@@ -84,6 +84,8 @@ block recons_blk_from_user_mem_ptr(void* p) {
     TEST_CHECK(sizeof(head->end_of_alloc_mem) == 8);
     TEST_CHECK(sizeof(head->free) == 4);
     TEST_CHECK(sizeof(head->start_of_alloc_mem) == 8);
+    size_t block_size = sizeof(struct s_block);
+    TEST_CHECK(block_size == align_up_fundamental(block_size));
     return head;
 }
 
