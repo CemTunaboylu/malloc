@@ -14,6 +14,11 @@ struct s_block {
     int free;
     long start_of_alloc_mem[1]; // pointing to the start of allocated memory
 }; 
+/* Note: We assume sizeof(struct s_block) is a multiple of MAX_ALIGNMENT so that
+    start_of_alloc_mem is suitably aligned for any fundamental type.
+    This is tested in test_malloc in case it is missed later on. 
+*/ 
+
 
 long* allocated_memory(block b); 
 block reconstruct_from_user_memory(void* p); 
@@ -27,9 +32,12 @@ block reconstruct_from_user_memory(void* p);
 
 // test probes use head, thus we need to make it external
 extern block head; 
-extern const int MAX_ALIGNMENT;
+extern const size_t MAX_ALIGNMENT;
 
 size_t align_up_fundamental(size_t);
+static inline size_t align(size_t s) {
+    return align_up_fundamental(s);
+}
 
 /*
 The allocator calls these wrappers. In tests, they can be 

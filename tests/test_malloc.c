@@ -195,7 +195,7 @@ static void test_header_alignment_and_size(void) {
     TEST_CHECK(p != NULL);
 
     block head = recons_blk_from_user_mem_ptr(p);
-    TEST_CHECK(head->size == align_up_fundamental(requested_bytes));
+    TEST_CHECK(head->size == align(requested_bytes));
 
     size_t size_of_block = sizeof(struct s_block);
     // 5*8 + (4 but max_align_t aligned so 8) = 40
@@ -204,10 +204,10 @@ static void test_header_alignment_and_size(void) {
         "size_of_block must be %lu, got %lu",
             expected_block_size,
             size_of_block);
-    TEST_CHECK_( size_of_block == align_up_fundamental(size_of_block),
+    TEST_CHECK_( size_of_block == align(size_of_block),
         "size_of_block must aligned %lu != %lu",
             expected_block_size,
-            align_up_fundamental(size_of_block));
+            align(size_of_block));
     FREE_UNDER_TESTING(p);
     ensure_my_free_is_called();
     ensure_freed();
@@ -267,7 +267,7 @@ static void test_forward_fusion_2_blocks(void) {
 
     LOG("\tpost-fwd-fusion ===\n");
 
-    size_t aligned_base_bytes = align_up_fundamental(base_bytes);
+    size_t aligned_base_bytes = align(base_bytes);
     size_t block_size = sizeof(struct s_block);
     size_t expected_size = (aligned_base_bytes*2+block_size);
     TEST_CHECK_(blk->size == expected_size,
@@ -497,7 +497,7 @@ static void test_realloc_grow_and_shrink(void) {
 }
 
 TEST_LIST = {
-    { "test_align_up",                       test_align_up },
+    { "test_align",                       test_align },
     { "test_invalid_addr_outside_before_for_is_valid_addr",                       test_invalid_addr_outside_before_for_is_valid_addr },
     { "test_invalid_addr_outside_after_for_is_valid_addr",                       test_invalid_addr_outside_after_for_is_valid_addr },
     { "test_valid_addr_for_is_valid_addr",                       test_valid_addr_for_is_valid_addr },
