@@ -6,6 +6,12 @@
 #include "internal.h"
 #include "mm_debug.h"
 
+/* NOTE:
+    We define CALLOC/FREE/MALLOC/REALLOC macros so that:
+    - inside this file we can call MALLOC(...) and FREE(...)
+    - but after preprocessing, these become the real exported malloc/calloc/etc.
+    This lets us override the libc allocator cleanly in one translation unit.
+*/
 #define CALLOC calloc
 #define FREE free
 #define MALLOC malloc   
@@ -286,19 +292,21 @@ void* realloc(void* p, size_t size){
 
     if (blk->size == size ) return p;
 
+    // try to grow in-place
     while (blk->next && blk->size < size) {
         fuse_next(blk);
     }
-    // we have done all that work for nothing...
+    // could not grow in place enough, allocate new and copy, free old
     if (blk->size < size) {
         void* n = MALLOC(size);
-        if (n == NULL) {return p;}
+        if (n == NULL) {return p;} // current policy: keep old ptr on out-of-memory 
         block blk_n = reconstruct_from_user_memory(n);
         block blk_p = reconstruct_from_user_memory(p);
         deep_copy_block(blk_p, blk_n);
         free(p);
         return n;
     }
+    // grew enough but may need splitting now
     else if (is_splittable(blk, size)) {
         MM_REALLOC_ENOUGH_SIZE();
         split_block(blk,size);
