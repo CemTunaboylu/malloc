@@ -18,14 +18,13 @@
 #define REALLOC realloc   
 
 #define CURRENT_BRK mm_sbrk(0)
-#define ADDITIONAL_BYTES_FOR_SPLITTING MAX_ALIGNMENT
 
-static inline size_t align(size_t s) { return align_up_fundamental(s); }
-static const size_t SIZE_OF_BLOCK = sizeof(struct s_block);
+#define MIN_SPLIT_REMAINING_PAYLOAD (MAX_ALIGNMENT)
 static const size_t BLOCK_OFFSET = offsetof(struct s_block, start_of_alloc_mem);
+static const size_t SIZE_OF_BLOCK = sizeof(struct s_block);
 
 block head = NULL; 
-static long allocated_bytes;
+static size_t allocated_bytes;
 
 long* allocated_memory(block b) {
     return b->start_of_alloc_mem;
@@ -40,11 +39,12 @@ int do_ends_hold(block b) {
 }
 
 void deep_copy_block(block src, block to) {
-    int* src_user_mem = (int*) allocated_memory(src);
-    int* to_user_mem = (int*) allocated_memory(to);
+    // int* seems to be UB, to be safe and truly type agnostic, we treat it byte by byte
+    unsigned char* src_user_mem = (unsigned char*) allocated_memory(src);
+    unsigned char* to_user_mem = (unsigned char*) allocated_memory(to);
 
-    size_t min = src->size > to->size ? to->size : src->size;
-
+    size_t min = src->size < to->size ? src->size : to->size;
+    // hopefully the compiler will vectorize this loop, unroll it and use wider loads/stores internally to optimize
     for (size_t i = 0; i < min; i++ )
     {
         to_user_mem[i] = src_user_mem[i];
@@ -151,7 +151,7 @@ int is_addr_valid_heap_addr(void* p) {
 
 int is_splittable(block blk, size_t aligned_size) {
     size_t remaining_size = blk->size - aligned_size;
-    size_t min_splittable_total_block_size = SIZE_OF_BLOCK+ADDITIONAL_BYTES_FOR_SPLITTING;
+    size_t min_splittable_total_block_size = SIZE_OF_BLOCK+MIN_SPLIT_REMAINING_PAYLOAD;
     return (remaining_size > min_splittable_total_block_size); 
 }
 
@@ -222,9 +222,9 @@ void FREE(void* p) {
             head = NULL;
         
 #ifdef ENABLE_MM_SBRK
-    long back = SIZE_OF_BLOCK + blk->size; 
+    size_t back = SIZE_OF_BLOCK + blk->size; 
     void* old_tail = CURRENT_BRK;
-    MM_ASSERT(allocated_bytes - back >= 0);
+    MM_ASSERT(allocated_bytes >= back);
     void* ok = mm_sbrk(-back);
     if (ok == (void*) -1) {
         perror("error while releasing the tail");
