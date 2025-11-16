@@ -83,16 +83,14 @@ block first_fit_find(block head, block* tail, size_t aligned_size){
 }
 
 void fuse_next(block b){
-    if (b->free == 0) {
-        return;
-    }
     if (b->next == NULL) {
         return;
     }
     block next = b->next;
-    if(next->free) {
-        b->size += SIZE_OF_BLOCK + next->size;
+    if(!next->free) {
+        return;
     }
+    b->size += SIZE_OF_BLOCK + next->size;
     b->next = next->next;
     b->end_of_alloc_mem = end(b);
     if (next->next)
