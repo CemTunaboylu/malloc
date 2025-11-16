@@ -130,19 +130,21 @@ void ensure_realloc_enough_size(void) {
 }
 
 
-static void test_align_up(void) {
-    size_t one_short = MAX_ALIGNMENT - 1;
-    TEST_CHECK((one_short+1) == align_up_fundamental(one_short));
+static void test_align(void) {
 
-    size_t one_long = MAX_ALIGNMENT + 1;
-    TEST_CHECK_((one_long+(MAX_ALIGNMENT-1)) == align_up_fundamental(one_long), 
-        "%lu != %lu " ,one_long+(MAX_ALIGNMENT-1), align_up_fundamental(one_long));
+    for (size_t any = 1; any<= MAX_ALIGNMENT; any++) 
+        TEST_CHECK((MAX_ALIGNMENT) == align(any));
 
-    size_t exact = MAX_ALIGNMENT;
-    TEST_CHECK(exact == align_up_fundamental(exact));
+    size_t two_max_alg =  (MAX_ALIGNMENT*2);
+    for (size_t any = MAX_ALIGNMENT+1; any <= two_max_alg; any++) 
+        TEST_CHECK_(two_max_alg == align(any), 
+            "%lu != %lu " , any, align(any));
 
     size_t multiple = MAX_ALIGNMENT*4;
-    TEST_CHECK(multiple == align_up_fundamental(multiple));
+    TEST_CHECK(multiple == align(multiple));
+
+    size_t large = MAX_ALIGNMENT*4-(MAX_ALIGNMENT/2);
+    TEST_CHECK((MAX_ALIGNMENT*4)== align(large));
 }
 
 static void test_invalid_addr_outside_before_for_is_valid_addr(void) {

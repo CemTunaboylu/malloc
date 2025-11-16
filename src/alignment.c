@@ -1,3 +1,4 @@
+#include <math.h>
 #include <stdalign.h>
 #include <stddef.h>
 #include <sys/types.h>
@@ -21,9 +22,9 @@
 
     Other over-aligned types such as special SIMD types may require `aligned_alloc`.
 */
-static size_t align_up(size_t x, size_t a) { 
-    size_t num_bits = (x >> 1)-1;
-    return (((a-1) >> num_bits) << num_bits) + x; 
+static size_t align_up(size_t any, size_t to) { 
+    size_t shft = log2(to);
+    return (((any-1) >> shft)  << shft) + to;
 }
-const int MAX_ALIGNMENT = _Alignof(max_align_t); 
-size_t align_up_fundamental(size_t a) { return align_up(MAX_ALIGNMENT, a); }
+const size_t MAX_ALIGNMENT = _Alignof(max_align_t); 
+size_t align_up_fundamental(size_t a) { return align_up(a, MAX_ALIGNMENT); }
