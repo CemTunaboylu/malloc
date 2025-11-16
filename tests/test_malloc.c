@@ -73,11 +73,8 @@ static inline int is_aligned(void* p) {
     return ((uintptr_t)p % _Alignof(max_align_t)) == 0;
 }
 
-block recons_blk_from_user_mem_ptr(void* p) {
-    block head = reconstruct_from_user_memory(p);
+void check_block_header_shape(block head) {
     TEST_CHECK(is_aligned(head));
-    TEST_CHECK_(p == (void*)allocated_memory(head),"head=%p, p=%p, alloc(head)=%p",
-         (void*)head, p, (void*)allocated_memory(head));
     TEST_CHECK(sizeof(head->size) == 8);
     TEST_CHECK(sizeof(head->next) == 8);
     TEST_CHECK(sizeof(head->prev) == 8);
@@ -85,7 +82,14 @@ block recons_blk_from_user_mem_ptr(void* p) {
     TEST_CHECK(sizeof(head->free) == 4);
     TEST_CHECK(sizeof(head->start_of_alloc_mem) == 8);
     size_t block_size = sizeof(struct s_block);
-    TEST_CHECK(block_size == align_up_fundamental(block_size));
+    TEST_CHECK(block_size == align(block_size));
+}
+
+block recons_blk_from_user_mem_ptr(void* p) {
+    block head = reconstruct_from_user_memory(p);
+    check_block_header_shape(head);
+    TEST_CHECK_(p == (void*)allocated_memory(head),"head=%p, p=%p, alloc(head)=%p",
+         (void*)head, p, (void*)allocated_memory(head));
     return head;
 }
 
