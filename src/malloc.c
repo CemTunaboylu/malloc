@@ -21,19 +21,17 @@
 #define CURRENT_BRK mm_sbrk(0)
 
 #define MIN_SPLIT_REMAINING_PAYLOAD (MAX_ALIGNMENT)
-static const size_t BLOCK_OFFSET = offsetof(struct s_block, start_of_alloc_mem);
 static const size_t SIZE_OF_BLOCK = sizeof(struct s_block);
 
 block head = NULL; 
 static size_t allocated_bytes;
 
-long* allocated_memory(block b) {
-    return b->start_of_alloc_mem;
+void* allocated_memory(block b) {
+    return (void*)(b+1);
 }
 
 void *end(block b) {
-    return (void*)((char*) allocated_memory(b) + b->size);
-}
+    return (void*)((char*) allocated_memory(b) + b->size);}
 
 int do_ends_hold(block b) {
     return (end(b) == b->end_of_alloc_mem);
@@ -172,7 +170,7 @@ void split_block(block b, size_t aligned_size_to_shrink){
 }
 
 block reconstruct_from_user_memory(void* p) {
-    return (block)((char*)p - BLOCK_OFFSET);
+    return ((block)p - 1);
 }
 
 /* ----- allocators ----- */

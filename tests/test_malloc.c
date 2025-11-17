@@ -80,7 +80,6 @@ void check_block_header_shape(block head) {
     TEST_CHECK(sizeof(head->prev) == 8);
     TEST_CHECK(sizeof(head->end_of_alloc_mem) == 8);
     TEST_CHECK(sizeof(head->free) == 4);
-    TEST_CHECK(sizeof(head->start_of_alloc_mem) == 8);
     size_t block_size = sizeof(struct s_block);
     TEST_CHECK(block_size == align(block_size));
 }
@@ -202,8 +201,8 @@ static void test_header_alignment_and_size(void) {
     TEST_CHECK(head->size == align(requested_bytes));
 
     size_t size_of_block = sizeof(struct s_block);
-    // 5*8 + (4 but max_align_t aligned so 8) = 40
-    size_t expected_block_size = (6*8);
+    // 4*8 + (4 but max_align_t aligned so 8) = 40
+    size_t expected_block_size = (5*8);
     TEST_CHECK_( size_of_block == expected_block_size,
         "size_of_block must be %lu, got %lu",
             expected_block_size,

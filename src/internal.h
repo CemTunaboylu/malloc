@@ -11,9 +11,10 @@ struct s_block {
     size_t size;
     block next;
     block prev;
-    void* end_of_alloc_mem;
     int free;
-    long start_of_alloc_mem[1]; // pointing to the start of allocated memory
+    // points to end of the allocated user memory to add another check 
+    // for reconstructing the block from given pointer
+    void* end_of_alloc_mem; 
 }; 
 /* Note: We assume sizeof(struct s_block) is a multiple of MAX_ALIGNMENT so that
     start_of_alloc_mem is suitably aligned for any fundamental type.
@@ -21,7 +22,7 @@ struct s_block {
 */ 
 
 
-long* allocated_memory(block b); 
+void* allocated_memory(block b); 
 block reconstruct_from_user_memory(void* p); 
 
 #ifdef TESTING

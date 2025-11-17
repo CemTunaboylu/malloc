@@ -113,9 +113,8 @@ Each block in the heap has the following layout:
 | size                        |  ← bytes in payload
 | next                        |  ← pointer to next block
 | prev                        |  ← pointer to previous block
-| end_of_alloc_mem            |
+| end_of_alloc_mem            |  ← end of user memory
 | free (int)                  |
-| start_of_alloc_mem[1]       |  ← beginning of user memory
 +-----------------------------+
 ```
 
@@ -126,7 +125,7 @@ The block header is intentionally aligned and verified in tests.
 1. Align the requested size
 2. Search for a suitable free block (first-fit)
 3. Split the block if large enough
-4. Return pointer to `start_of_alloc_mem`
+4. Return pointer to start of the requested allocated memory
 
 ## Freeing Flow
 
