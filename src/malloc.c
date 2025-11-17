@@ -174,7 +174,7 @@ block reconstruct_from_user_memory(void* p) {
 
 /* ----- allocators ----- */
 
-void* malloc(size_t);
+void* MALLOC(size_t);
 
 // allocate memory for an array of length len consisting of 
 // memory chunks of size size_of (of objects of size_of)
