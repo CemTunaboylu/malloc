@@ -236,8 +236,7 @@ void FREE(void* p) {
         MM_ASSERT((char*) old_tail == (char*) CURRENT_BRK); 
     #endif
 #elif defined(ENABLE_MM_BRK)
-    void* ok = mm_brk(blk);
-    if (ok == (void*) -1) {
+    if (mm_brk(blk) == -1) {
         perror("error while releasing the tail");
         return;
     }

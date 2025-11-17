@@ -1,6 +1,7 @@
 #pragma once
 
 #include <sys/types.h>
+#include <stdint.h>
 
 // since blocks are always used with pointers, we define the type as a pointer type
 typedef struct s_block *block;
@@ -46,8 +47,8 @@ we can assert “one mmap for big alloc,” “no sbrk for free,” etc.
 */
 
 // used for small allocations < 128 KiB
-void* mm_sbrk(long inc);
-void* mm_brk(const void* p);
+void* mm_sbrk(intptr_t inc);
+int mm_brk(void* p);
 // if more than one page, use this
 void* mm_mmap(size_t n);
 int   mm_munmap(void* p, size_t n);
