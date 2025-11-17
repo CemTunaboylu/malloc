@@ -16,6 +16,7 @@ INCLUDE_PUBLIC   := -Iinclude
 CFLAGS   := $(CSTD) $(WARN) $(DBG) $(SAN) -fno-builtin $(TEST_DEFS) $(INCLUDE_PUBLIC) $(INCLUDE_INTERNAL)
 ARFLAGS  := rcs
 UNAME_S := $(shell uname -s)
+LDLIBS := -lm
 ifeq ($(UNAME_S),Darwin)
   # On macOS, use libtool to produce a static archive compatible with ld64
   MAKE_STATIC_LIB = libtool -static -o
@@ -63,7 +64,7 @@ $(TST_DIR)/%.o: $(TEST_DIR)/%.c | $(TST_DIR)
 
 # Link test object with our library (library last is conventional)
 $(TST_DIR)/%: $(TST_DIR)/%.o $(LIB)
-	$(CC) $(CFLAGS) $< $(LIB) -o $@
+	$(CC) $(CFLAGS) $< $(LIB) $(LDLIBS) -o $@
 
 test: all
 	@for t in $(TESTS); do echo "==> $$t"; "$$t" || exit 1; done
