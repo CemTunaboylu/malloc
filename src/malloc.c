@@ -54,10 +54,12 @@ void deep_copy_block(block src, block to) {
 block extend_heap(block* last, size_t aligned_size){
     block brk = CURRENT_BRK;
     size_t total_bytes_to_allocate = SIZE_OF_BLOCK + aligned_size;
-    if (mm_sbrk(total_bytes_to_allocate) == (void*) -1) {
+    void* requested = mm_sbrk(total_bytes_to_allocate);
+    if ( requested == (void*) -1) {
         perror("failed to allocate memory");
         return NULL;
     }
+    MM_ASSERT((void*) brk == requested);
     brk->size = aligned_size;
     brk->next = NULL;
     brk->prev= NULL;
