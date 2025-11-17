@@ -2,6 +2,7 @@
 #include <sys/types.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <errno.h>
 
 #include "internal.h"
 #include "mm_debug.h"
