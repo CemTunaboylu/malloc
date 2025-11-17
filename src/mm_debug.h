@@ -5,45 +5,63 @@
   #define MM_ASSERT(x) assert(x)
   #define MM_UNREACHABLE() assert(!"unreachable")
 
-  int calloc_called;
+  #define MM_ASSERT_EQ_INT(label, actual, expected)           \
+    do {                                                      \
+      if ((actual) != (expected)) {                           \
+        fprintf(stderr,                                       \
+                "[MM_ASSERT] %s: actual=%d expected=%d\n",    \
+                (label), (int)(actual), (int)(expected));     \
+        assert((actual) == (expected));                       \
+      }                                                       \
+    } while (0)
+
+  extern int calloc_called;
   #define MM_CALLOC_CALL() (calloc_called += 1)
   #define MM_RESET_CALLOC_CALL_MARKER() (calloc_called = 0)
-  #define MM_ASSERT_CALLOC_CALLED(times) assert(calloc_called == times)
+  #define MM_ASSERT_CALLOC_CALLED(times) \
+    MM_ASSERT_EQ_INT("calloc_called", calloc_called, (times))
 
-  int free_called;
+  extern int free_called;
   #define MM_FREE_CALL() (free_called += 1)
   #define MM_RESET_FREE_CALL_MARKER() (free_called = 0)
-  #define MM_ASSERT_FREE_CALLED(times) assert(free_called == times)
+  #define MM_ASSERT_FREE_CALLED(times) \
+    MM_ASSERT_EQ_INT("free_called", free_called, (times))
 
-  int freed;
+  extern int freed;
   #define MM_FREED() (freed += 1)
   #define MM_RESET_FREED_MARKER() (freed = 0)
-  #define MM_ASSERT_FREED(times) assert(freed == times)
+  #define MM_ASSERT_FREED(times) \
+    MM_ASSERT_EQ_INT("freed", freed, (times))
 
-  int malloc_called;
+  extern int malloc_called;
   #define MM_MALLOC_CALL() (malloc_called += 1)
   #define MM_RESET_MALLOC_CALL_MARKER() (malloc_called = 0)
-  #define MM_ASSERT_MALLOC_CALLED(times) assert(malloc_called == times)
+  #define MM_ASSERT_MALLOC_CALLED(times) \
+    MM_ASSERT_EQ_INT("malloc_called", malloc_called, (times))
 
-  int realloc_called;
+  extern int realloc_called;
   #define MM_REALLOC_CALL() (realloc_called += 1)
   #define MM_RESET_REALLOC_MARKER() (realloc_called = 0)
-  #define MM_ASSERT_REALLOC_CALLED(times) assert(realloc_called == times)
+  #define MM_ASSERT_REALLOC_CALLED(times) \
+    MM_ASSERT_EQ_INT("realloc_called", realloc_called, (times))
 
-  int realloc_enough_size;
+  extern int realloc_enough_size;
   #define MM_REALLOC_ENOUGH_SIZE() (realloc_enough_size += 1)
   #define MM_RESET_REALLOC_ENOUGH_SIZE_MARKER() (realloc_enough_size = 0)
-  #define MM_ASSERT_REALLOC_ENOUGH_SIZE(times) assert(realloc_enough_size == times)
+  #define MM_ASSERT_REALLOC_ENOUGH_SIZE(times) \
+    MM_ASSERT_EQ_INT("realloc_enough_size", realloc_enough_size, (times))
 
-  int fuse_fwd_called;
+  extern int fuse_fwd_called;
   #define MM_FUSE_FWD_CALL() (fuse_fwd_called += 1)
   #define MM_RESET_FUSE_FWD_CALL_MARKER() (fuse_fwd_called = 0)
-  #define MM_ASSERT_FUSE_FWD_CALLED(times) assert(fuse_fwd_called == times)
+  #define MM_ASSERT_FUSE_FWD_CALLED(times) \
+    MM_ASSERT_EQ_INT("fuse_fwd_called", fuse_fwd_called, (times))
 
-  int fuse_bwd_called;
+  extern int fuse_bwd_called;
   #define MM_FUSE_BWD_CALL() (fuse_bwd_called += 1)
   #define MM_RESET_FUSE_BWD_CALL_MARKER() (fuse_bwd_called = 0)
-  #define MM_ASSERT_FUSE_BWD_CALLED(times) assert(fuse_bwd_called == times)
+  #define MM_ASSERT_FUSE_BWD_CALLED(times) \
+    MM_ASSERT_EQ_INT("fuse_bwd_called", fuse_bwd_called, (times))
 
 #else
   #if defined(__GNUC__)
