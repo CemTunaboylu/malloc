@@ -215,11 +215,7 @@ void FREE(void* p) {
     int is_at_head = (!blk->prev);
 
     if (is_at_tail) {
-        if (!is_at_head)
-            blk->prev->next = NULL;
-        else  
-            head = NULL;
-        
+
 #ifdef ENABLE_MM_SBRK
     size_t back = SIZE_OF_BLOCK + blk->size; 
     void* old_tail = CURRENT_BRK;
@@ -231,8 +227,13 @@ void FREE(void* p) {
     }
 
     // iff we truly release some pages, then we can project the change
-    if ((char*) old_tail > (char*) CURRENT_BRK)
+    if ((char*) old_tail > (char*) CURRENT_BRK) {
         allocated_bytes -= back;
+        if (!is_at_head)
+            blk->prev->next = NULL;
+        else  
+            head = NULL;
+    }
     #ifdef SHOW_SBRK_RELEASE_FAIL
         MM_ASSERT((char*) old_tail == (char*) CURRENT_BRK); 
     #endif

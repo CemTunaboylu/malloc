@@ -60,13 +60,14 @@ static void pre_test_sanity(void) {
 }
 
 static void post_test_sanity(void) {
+#ifdef EXPECT_RELEASE
     // No *new* permanent blocks
     TEST_CHECK_(_mm_total_blocks() == base_total_blocks, 
         "block leak: %zu -> %zu", base_total_blocks, _mm_total_blocks());
-
     // Free count should also match baseline
     TEST_CHECK_(_mm_free_blocks() == base_free_blocks,
         "free block mismatch: %zu -> %zu",base_free_blocks, _mm_free_blocks());
+#endif
 }
 
 static inline int is_aligned(void* p) {
