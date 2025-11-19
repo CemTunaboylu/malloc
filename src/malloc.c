@@ -226,8 +226,7 @@ void FREE(void* p) {
     size_t back = SIZE_OF_BLOCK + blk->size; 
     void* old_tail = CURRENT_BRK;
     MM_ASSERT(allocated_bytes >= back);
-    void* ok = mm_sbrk(-back);
-    if (ok == (void*) -1) {
+    if (mm_sbrk(-back) == (void*) -1) {
         perror("error while releasing the tail");
         return; 
     }
