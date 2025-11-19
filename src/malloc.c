@@ -83,19 +83,20 @@ block first_fit_find(block head, block* tail, size_t aligned_size){
     return curr;
 }
 
-void fuse_next(block b){
+int fuse_next(block b){
     if (b->next == NULL) {
-        return;
+        return -1;
     }
     block next = b->next;
     if(!next->free) {
-        return;
+        return -1;
     }
     b->size += SIZE_OF_BLOCK + next->size;
     b->next = next->next;
     b->end_of_alloc_mem = end(b);
     if (next->next)
         next->next->prev = b;
+    return 0;
 }
 
 void fuse_fwd(block b){
@@ -146,6 +147,11 @@ int is_addr_valid_heap_addr(void* p) {
     block blk = reconstruct_from_user_memory(p);
     if (!do_ends_hold(blk)) return 0;
     return (p == (void*)allocated_memory(blk));
+}
+
+int is_next_fusable(block b) {
+    block next = b->next;
+    return ((next != NULL) && (next->free == 1));
 }
 
 int is_splittable(block blk, size_t aligned_size) {
@@ -292,8 +298,8 @@ void* realloc(void* p, size_t size){
     if (blk->size == size ) return p;
 
     // try to grow in-place
-    while (blk->next && blk->size < size) {
-        fuse_next(blk);
+    while (is_next_fusable(blk) && blk->size < size) {
+        if (fuse_next(blk) == -1) break;
     }
     // could not grow in place enough, allocate new and copy, free old
     if (blk->size < size) {
