@@ -23,7 +23,7 @@ struct s_block {
 
 
 void* allocated_memory(block b); 
-block reconstruct_from_user_memory(void* p); 
+block reconstruct_from_user_memory(const void* p); 
 
 #ifdef TESTING
     void deep_copy_block(block src, block to);

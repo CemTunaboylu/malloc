@@ -169,7 +169,7 @@ void split_block(block b, size_t aligned_size_to_shrink){
     b->end_of_alloc_mem = end(b);
 }
 
-block reconstruct_from_user_memory(void* p) {
+block reconstruct_from_user_memory(const void* p) {
     return ((block)p - 1);
 }
 
@@ -203,7 +203,7 @@ void FREE(void* p) {
     if (!is_addr_valid_heap_addr(p)) {
         return;
     }
-    block blk = reconstruct_from_user_memory(p);
+    block blk = reconstruct_from_user_memory((const void*)p);
 
     blk->free = 1;
     MM_FREED();
@@ -284,7 +284,7 @@ void* realloc(void* p, size_t size){
 
     if (!is_addr_valid_heap_addr(p)) return NULL;
 
-    block blk = reconstruct_from_user_memory(p);
+    block blk = reconstruct_from_user_memory((const void*)p);
 
     // the block must be aligned
     size = align_up_fundamental(size);
@@ -299,8 +299,8 @@ void* realloc(void* p, size_t size){
     if (blk->size < size) {
         void* n = MALLOC(size);
         if (n == NULL) {return p;} // current policy: keep old ptr on out-of-memory 
-        block blk_n = reconstruct_from_user_memory(n);
-        block blk_p = reconstruct_from_user_memory(p);
+        block blk_n = reconstruct_from_user_memory((const void*)n);
+        block blk_p = reconstruct_from_user_memory((const void*)p);
         deep_copy_block(blk_p, blk_n);
         free(p);
         return n;

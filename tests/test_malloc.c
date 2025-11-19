@@ -86,7 +86,7 @@ void check_block_header_shape(block head) {
 }
 
 block recons_blk_from_user_mem_ptr(void* p) {
-    block head = reconstruct_from_user_memory(p);
+    block head = reconstruct_from_user_memory((const void*)p);
     check_block_header_shape(head);
     TEST_CHECK_(p == (void*)allocated_memory(head),"head=%p, p=%p, alloc(head)=%p",
          (void*)head, p, (void*)allocated_memory(head));
