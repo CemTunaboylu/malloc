@@ -1,6 +1,49 @@
 #pragma once
 
 #ifdef TESTING
+
+  #ifdef TRACK_RET_ADDR
+    #include <internal.h>
+    #ifdef __GNUC__
+    #  define MM_RET_ADDR() __builtin_extract_return_addr(__builtin_return_address(0))
+    #else
+    #  define MM_RET_ADDR() NULL
+    #endif
+
+    typedef struct {
+        block blk;
+        void *ret_addr;
+    } mm_callsite_entry;
+
+    extern mm_callsite_entry mm_callsites[1024];
+    extern size_t mm_callsite_count;
+
+    #define LATEST_CALLERS()                                              {\
+      do {                                                                 \
+      for (size_t i = 0; i < mm_callsite_count ; i++)                      \
+      {                                                                    \
+        mm_callsite_entry cse = mm_callsites[i];                           \
+        if (!cse.blk) continue;                                            \
+        fprintf(stderr,                                                    \
+        " [MM_RET_ADDR] (%lu) size=%lu ret_addr=%p, free: %d\n",        \
+        i, (cse.blk->size), (cse.ret_addr), (cse.blk->free)); \
+      }                                                                    \
+    }while(0);                                                             \
+    fprintf(stderr, "---------\n");}
+
+    #define MM_ASSERT_EQ_INT_W_CALLERS(label, actual, expected)          {\
+      do {                                                                \
+        if ((actual) != (expected)) {                                     \
+          fprintf(stderr,                                                 \
+                  "[MM_ASSERT] %s: actual=%d expected=%d\n",              \
+                  (label), (int)(actual), (int)(expected));               \
+          LATEST_CALLERS()                                                \
+          assert((actual) == (expected));                                 \
+        }                                                                 \
+      } while (0);                                                        \
+    }
+  #endif
+
   #include <assert.h>
   #define MM_ASSERT(x) assert(x)
   #define MM_UNREACHABLE() assert(!"unreachable")
@@ -36,8 +79,14 @@
   extern int malloc_called;
   #define MM_MALLOC_CALL() (malloc_called += 1)
   #define MM_RESET_MALLOC_CALL_MARKER() (malloc_called = 0)
-  #define MM_ASSERT_MALLOC_CALLED(times) \
-    MM_ASSERT_EQ_INT("malloc_called", malloc_called, (times))
+
+  #ifdef TRACK_RET_ADDR
+    #define MM_ASSERT_MALLOC_CALLED(times) \
+      MM_ASSERT_EQ_INT_W_CALLERS("malloc_called_with_caller", malloc_called, (times))
+  #else 
+    #define MM_ASSERT_MALLOC_CALLED(times) \
+      MM_ASSERT_EQ_INT("malloc_called", malloc_called, (times))
+  #endif
 
   extern int realloc_called;
   #define MM_REALLOC_CALL() (realloc_called += 1)

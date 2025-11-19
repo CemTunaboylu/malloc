@@ -57,6 +57,10 @@ static void pre_test_sanity(void) {
     base_total_blocks = _mm_total_blocks();
     base_free_blocks  = _mm_free_blocks();
     base_brk          = CURRENT_BRK;
+
+#ifdef TRACK_CALLER
+    LATEST_CALLERS();
+#endif
 }
 
 static void post_test_sanity(void) {
@@ -67,6 +71,12 @@ static void post_test_sanity(void) {
     // Free count should also match baseline
     TEST_CHECK_(_mm_free_blocks() == base_free_blocks,
         "free block mismatch: %zu -> %zu",base_free_blocks, _mm_free_blocks());
+#endif
+
+#ifdef TRACK_CALLER
+    if (_mm_total_blocks() != base_total_blocks) {
+        LATEST_CALLERS();
+    }
 #endif
 }
 
