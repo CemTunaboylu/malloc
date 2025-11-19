@@ -302,7 +302,7 @@ void* realloc(void* p, size_t size){
         block blk_n = reconstruct_from_user_memory((const void*)n);
         block blk_p = reconstruct_from_user_memory((const void*)p);
         deep_copy_block(blk_p, blk_n);
-        free(p);
+        FREE(p);
         return n;
     }
     // grew enough but may need splitting now
