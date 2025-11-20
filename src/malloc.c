@@ -118,15 +118,15 @@ void fuse_fwd(block b){
     if (b->free == 0) {
         return;
     }
-    if (b->next == NULL) {
+    if (b->next == NULL || b->next->free == 0) {
         return;
     }
     block cursor = b;
-    while( cursor->next && cursor->next->free ) {
+    do {
         b->size += size_of_block() + cursor->next->size;
         cursor=cursor->next;
         MM_FUSE_FWD_CALL();
-    }
+    } while( cursor->next && cursor->next->free );
     b->next=cursor->next;
     b->end_of_alloc_mem = end(b);
     if (cursor->next)

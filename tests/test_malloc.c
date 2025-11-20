@@ -255,6 +255,8 @@ static void test_calloc_zero_fill(void) {
     ensuring_free(p);
 }
 
+#if !defined(INTERPOSE)
+
 static void test_forward_fusion_2_blocks(void) {
     LOG("=== %s: start ===\n", __func__);
 
@@ -338,6 +340,8 @@ static void test_backward_fusion_2_blocks(void) {
     p = ptrs[0];
     ensuring_free(p);
 }
+
+#endif
 
 static void test_free_no_release_or_fusion(void) {
     LOG("=== %s: start ===\n", __func__);
@@ -493,8 +497,13 @@ TEST_LIST = {
     { "test_valid_addr_for_is_valid_addr",                       test_valid_addr_for_is_valid_addr },
     { "test_malloc_zero",                       test_malloc_zero },
     { "test_header_alignment_and_size",                  test_header_alignment_and_size },
+// Note: Consistently, below tests when interposed fail. There are sliping allocations in between test allocations, 
+// i.e. tests are interrupted with non-test allocations. Our already naive assumptions about heap
+// cannot be deterministically adapted to these interruptions, thus they are not included in function interposition.
+#if !defined(INTERPOSE)
     { "test_forward_fusion_2_blocks",              test_forward_fusion_2_blocks },
     { "test_backward_fusion_2_blocks",              test_backward_fusion_2_blocks },
+#endif
     { "test_malloc_allocated_memory_aligned",   test_malloc_allocated_memory_aligned },
     { "test_calloc_zero_fill",              test_calloc_zero_fill },
     { "test_free_no_release_or_fusion",              test_free_no_release_or_fusion },
