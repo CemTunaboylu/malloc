@@ -7,7 +7,7 @@
 
     static const int stderr_fd = 2;
 
-    static void debug_write_hex_uintptr(uintptr_t v) {
+    static void debug_write_hex_uintptr_fd(int fd, uintptr_t v) {
         char buf[2 + sizeof(uintptr_t) * 2]; // "0x" + 2 hex chars per byte
         char *p = buf + sizeof buf;
         static const char hex[] = "0123456789abcdef";
@@ -23,19 +23,31 @@
         *--p = 'x';
         *--p = '0';
 
-        write(stderr_fd, p, (buf + sizeof buf) - p);
+        write(fd, p, (buf + sizeof buf) - p);
+    }
+
+    static void debug_write_hex_uintptr(uintptr_t v) {
+        debug_write_hex_uintptr_fd(stderr_fd, v); 
+    }
+
+    void debug_write_str_fd(int fd, const char *s) {
+        if (!s) return;
+        write(fd, s, strlen(s));
     }
 
     void debug_write_str(const char *s) {
-        if (!s) return;
-        write(stderr_fd, s, strlen(s));
+        debug_write_str_fd(stderr_fd, s);
+    }
+
+    void debug_write_ptr_fd(int fd, const void* p) {
+        debug_write_hex_uintptr_fd(fd, (uintptr_t)p);
     }
 
     void debug_write_ptr(const void* p) {
         debug_write_hex_uintptr((uintptr_t)p);
     }
 
-    void debug_write_u64(size_t v) {
+    void debug_write_u64_fd(int fd, size_t v) {
         char buf[32];
         char *p = buf + sizeof buf;
         *--p = '\n';
@@ -47,9 +59,16 @@
                 v /= 10;
             }
         }
-        write(stderr_fd, p, (buf + sizeof buf) - p);
+        write(fd, p, (buf + sizeof buf) - p);
+    }
+
+    void debug_write_u64(size_t v) {
+        debug_write_u64_fd(stderr_fd, v); 
     }
 #else 
+    void debug_write_ptr_fd(int fd, const void *p) { (void)fd; (void)p; }
+    void debug_write_str_fd(int fd, const char *s) { (void)fd; (void)s; }
+    void debug_write_u64_fd(int fd, size_t v) { (void)fd; (void)v; }
     void debug_write_ptr(const void *p) { (void)p; }
     void debug_write_str(const char *s) { (void)s; }
     void debug_write_u64(size_t v) { (void)v; }
