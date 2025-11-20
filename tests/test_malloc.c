@@ -1,6 +1,8 @@
 #include <stdalign.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <stdarg.h>
+#include <stdio.h>
 
 static void pre_test_sanity(void);
 static void post_test_sanity(void);
@@ -30,12 +32,29 @@ static size_t base_free_blocks;
 static void  *base_brk;
 
 #ifdef ENABLE_LOG
+    extern void debug_write_ptr(const void *p);
+    extern void debug_write_str(const char *s);
+    extern void debug_write_u64(size_t v);
     static FILE *global_test_log;
-    #define LOG(...) fprintf(global_test_log, __VA_ARGS__); print_list_into_file(global_test_log);
 
-    static void free_resources(void){
-        fclose(global_test_log);
+    static void logf_nonalloc(const char *fmt, ...) {
+        char buf[256];
+        va_list ap;
+        va_start(ap, fmt);
+        int n = vsnprintf(buf, sizeof buf, fmt, ap);
+        va_end(ap);
+        if (n < 0) {
+            return;
+        }
+        if ((size_t)n >= sizeof buf) {
+            n = (int)sizeof(buf) - 1;
+        }
+        buf[n] = '\0';
+        debug_write_str(buf);
     }
+
+    #define LOG(...) do { logf_nonalloc(__VA_ARGS__); print_list_into_file(global_test_log); } while (0)
+    static void free_resources(void){ fclose(global_test_log); }
 #else
     #define LOG(...) do{}while(0)
     #define PRINT_BLOCK_LIST() do{}while(0)

@@ -9,6 +9,7 @@
 
   static inline void mm_fatal(const char *msg) {
       debug_write_str(msg);
+      debug_write_str("\n");
       _exit(1);   // or __builtin_trap();
   }
 

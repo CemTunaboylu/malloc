@@ -50,7 +50,6 @@
     void debug_write_u64_fd(int fd, size_t v) {
         char buf[32];
         char *p = buf + sizeof buf;
-        *--p = '\n';
         if (v == 0) {
             *--p = '0';
         } else {
