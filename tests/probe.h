@@ -1,7 +1,6 @@
 #pragma once 
 
 #include <stddef.h>
-
 #include <internal.h>
 
 block _mm_block_header(void);
