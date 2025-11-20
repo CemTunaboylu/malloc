@@ -138,6 +138,9 @@ investigation-container:
 	-w /app \
 	malloc-investigation
 
+install-git-hooks:
+	git config core.hooksPath githooks
+
 clean:
 	$(RM) -r $(BLD_DIR)
 	docker rmi -f $(IMAGE) >/dev/null 2>&1 || true; 

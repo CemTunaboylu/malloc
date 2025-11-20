@@ -1,0 +1,14 @@
+#!/bin/sh
+set -e  # fail fast: any failing command aborts the push
+
+# Only run interpose tests on macOS, since they're Darwin-only
+if [ "$(uname -s)" = "Darwin" ]; then
+  echo "==> Running interposed tests (make test-interpose)..."
+  make clean test-interpose
+fi
+
+echo "==> Running Linux container tests (make test-container)..."
+make clean test-container
+
+# Print success message in green
+printf "\033[0;32mAll pre-push checks passed.\033[0m\n"
