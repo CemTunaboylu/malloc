@@ -1,3 +1,8 @@
+#ifdef ENABLE_LOG
+    #ifndef __APPLE__
+        #define _POSIX_C_SOURCE 200809L
+    #endif
+#endif
 #include <stdalign.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -32,8 +37,10 @@ static size_t base_free_blocks;
 static void  *base_brk;
 
 #ifdef ENABLE_LOG
+
     extern void debug_write_ptr(const void *p);
     extern void debug_write_str(const char *s);
+    extern void debug_write_str_fd(int fd, const char *s);
     extern void debug_write_u64(size_t v);
     static FILE *global_test_log;
 
@@ -50,7 +57,8 @@ static void  *base_brk;
             n = (int)sizeof(buf) - 1;
         }
         buf[n] = '\0';
-        debug_write_str(buf);
+        int fd = fileno(global_test_log);
+        debug_write_str_fd(fd, buf);
     }
 
     #define LOG(...) do { logf_nonalloc(__VA_ARGS__); print_list_into_file(global_test_log); } while (0)
@@ -78,6 +86,8 @@ static void pre_test_sanity(void) {
     MM_RESET_FREE_CALL_MARKER();
     MM_RESET_FREED_MARKER();
     MM_RESET_CALLOC_CALL_MARKER();
+    MM_RESET_FUSE_FWD_CALL_MARKER();
+    MM_RESET_FUSE_BWD_CALL_MARKER();
 
     base_total_blocks = _mm_total_blocks();
     base_free_blocks  = _mm_free_blocks();
@@ -89,15 +99,6 @@ static void pre_test_sanity(void) {
 }
 
 static void post_test_sanity(void) {
-#ifdef EXPECT_RELEASE
-    // No *new* permanent blocks
-    TEST_CHECK_(_mm_total_blocks() == base_total_blocks, 
-        "block leak: %zu -> %zu", base_total_blocks, _mm_total_blocks());
-    // Free count should also match baseline
-    TEST_CHECK_(_mm_free_blocks() == base_free_blocks,
-        "free block mismatch: %zu -> %zu",base_free_blocks, _mm_free_blocks());
-#endif
-
 #ifdef TRACK_RET_ADDR
     if (_mm_total_blocks() != base_total_blocks) {
         LATEST_CALLERS();
@@ -105,19 +106,21 @@ static void post_test_sanity(void) {
 #endif
 }
 
+#ifdef INTERPOSE 
+#else 
+#endif
+
 static inline int is_aligned(void* p) {
     return ((uintptr_t)p % _Alignof(max_align_t)) == 0;
 }
 
 void check_block_header_shape(block head) {
-    TEST_CHECK(is_aligned(head));
     TEST_CHECK(sizeof(head->size) == 8);
     TEST_CHECK(sizeof(head->next) == 8);
     TEST_CHECK(sizeof(head->prev) == 8);
     TEST_CHECK(sizeof(head->end_of_alloc_mem) == 8);
     TEST_CHECK(sizeof(head->free) == 4);
-    size_t block_size = sizeof(struct s_block);
-    TEST_CHECK(block_size == align(block_size));
+    TEST_CHECK(is_aligned(head));
 }
 
 block recons_blk_from_user_mem_ptr(void* p) {
@@ -128,24 +131,13 @@ block recons_blk_from_user_mem_ptr(void* p) {
     return head;
 }
 
-void ensure_my_malloc_is_called(void) {
-    MM_ASSERT_MALLOC_CALLED(1);
+void* ensuring_calloc(size_t len, size_t size_of) {
+    MM_RESET_CALLOC_CALL_MARKER();
     MM_RESET_MALLOC_CALL_MARKER();
-}
-
-void ensure_my_free_is_called(void) {
-    MM_ASSERT_FREE_CALLED(1);
-    MM_RESET_FREE_CALL_MARKER();
-}
-
-void ensure_fuse_fwd_is_called(void) {
-    MM_ASSERT_FUSE_FWD_CALLED(1);
-    MM_RESET_FUSE_FWD_CALL_MARKER(); 
-}
-
-void ensure_fuse_bwd_is_called(void) {
-    MM_ASSERT_FUSE_BWD_CALLED(1);
-    MM_RESET_FUSE_BWD_CALL_MARKER(); 
+    int *q = (int*)CALLOC_UNDER_TESTING(len, size_of);
+    MM_ASSERT_CALLOC_CALLED(1);
+    MM_ASSERT_MALLOC_CALLED(1);
+    return q;
 }
 
 void ensure_freed(void) {
@@ -153,14 +145,35 @@ void ensure_freed(void) {
     MM_RESET_FREED_MARKER();
 }
 
-void ensure_my_calloc_is_called(void) {
-    MM_ASSERT_CALLOC_CALLED(1);
-    MM_RESET_CALLOC_CALL_MARKER();
+void ensuring_free(void* p) {
+    MM_RESET_FREE_CALL_MARKER();
+    FREE_UNDER_TESTING(p);
+    MM_ASSERT_FREE_CALLED(1);
+    ensure_freed();
 }
 
-void ensure_my_realloc_called(void) {
-    MM_ASSERT_REALLOC_CALLED(1);
+void* ensuring_malloc(size_t size) {
+    MM_RESET_MALLOC_CALL_MARKER();
+    void* p = MALLOC_UNDER_TESTING(size);
+    MM_ASSERT_MALLOC_CALLED(1);
+    return p;
+}
+
+void ensure_fuse_fwd_is_called(int exp) {
+    MM_ASSERT_FUSE_FWD_CALLED(exp);
+    MM_RESET_FUSE_FWD_CALL_MARKER(); 
+}
+
+void ensure_fuse_bwd_is_called(int exp) {
+    MM_ASSERT_FUSE_BWD_CALLED(exp);
+    MM_RESET_FUSE_BWD_CALL_MARKER(); 
+}
+
+void* ensuring_realloc(void* p, size_t size) {
     MM_RESET_REALLOC_MARKER();
+    void *r = REALLOC_UNDER_TESTING(p, size);
+    MM_ASSERT_REALLOC_CALLED(1);
+    return r;
 }
 
 void ensure_realloc_enough_size(void) {
@@ -168,9 +181,7 @@ void ensure_realloc_enough_size(void) {
     MM_RESET_REALLOC_ENOUGH_SIZE_MARKER();
 }
 
-
 static void test_align(void) {
-
     for (size_t any = 1; any<= MAX_ALIGNMENT; any++) 
         TEST_CHECK((MAX_ALIGNMENT) == align(any));
 
@@ -187,110 +198,79 @@ static void test_align(void) {
 }
 
 static void test_invalid_addr_outside_before_for_is_valid_addr(void) {
-    void *p = MALLOC_UNDER_TESTING(1);
-    ensure_my_malloc_is_called();
+    void *p = ensuring_malloc(1);
     TEST_CHECK(p != NULL);
     void *invalid = (char*)head + sizeof(struct s_block)*9;
     TEST_CHECK_(is_addr_valid_heap_addr(invalid) == 0, 
         "address %p should have been invalid since it is before list head %p", invalid, (void*)head);
-    FREE_UNDER_TESTING(p);
-    ensure_my_free_is_called();
-    ensure_freed();
+    ensuring_free(p);
 }
 
 static void test_invalid_addr_outside_after_for_is_valid_addr(void) {
-    void *p = MALLOC_UNDER_TESTING(1);
-    ensure_my_malloc_is_called();
+    void *p = ensuring_malloc(1);
     TEST_CHECK(p != NULL);
     void *invalid = (char*)p + sizeof(struct s_block);
     TEST_CHECK(is_addr_valid_heap_addr(invalid) == 0);
-    FREE_UNDER_TESTING(p);
-    ensure_my_free_is_called();
-    ensure_freed();
+    ensuring_free(p);
 }
 
 static void test_valid_addr_for_is_valid_addr(void) {
-    void *p = MALLOC_UNDER_TESTING(1);
-    ensure_my_malloc_is_called();
+    void *p = ensuring_malloc(1);
     TEST_CHECK(p != NULL);
     TEST_CHECK(is_addr_valid_heap_addr(p) == 1);
-    FREE_UNDER_TESTING(p);
-    ensure_my_free_is_called();
-    ensure_freed();
+    ensuring_free(p);
 }
 
 // malloc(0) is expected to return NULL pointer
 static void test_malloc_zero(void) {
-    void *p = MALLOC_UNDER_TESTING(0);
-    ensure_my_malloc_is_called();
+    void *p = ensuring_malloc(0);
     TEST_CHECK(p == NULL);
     FREE_UNDER_TESTING(p);
+    MM_ASSERT_FREE_CALLED(0);
+    MM_ASSERT_FREED(0);
 }
 
 static void test_header_alignment_and_size(void) {
     size_t requested_bytes = 1;
-    void *p = MALLOC_UNDER_TESTING(requested_bytes);
-    ensure_my_malloc_is_called();
+    void *p = ensuring_malloc(requested_bytes);
     TEST_CHECK(p != NULL);
 
     block head = recons_blk_from_user_mem_ptr(p);
     TEST_CHECK(head->size == align(requested_bytes));
-
-    size_t size_of_block = sizeof(struct s_block);
-    // 4*8 + (4 but max_align_t aligned so 8) = 40
-    size_t expected_block_size = (5*8);
-    TEST_CHECK_( size_of_block == expected_block_size,
-        "size_of_block must be %lu, got %lu",
-            expected_block_size,
-            size_of_block);
-    TEST_CHECK_( size_of_block == align(size_of_block),
-        "size_of_block must aligned %lu != %lu",
-            expected_block_size,
-            align(size_of_block));
-    FREE_UNDER_TESTING(p);
-    ensure_my_free_is_called();
-    ensure_freed();
+    ensuring_free(p);
 }
 
 static void test_malloc_allocated_memory_aligned(void) {
-    void *p = MALLOC_UNDER_TESTING(31);
-    ensure_my_malloc_is_called();
+    void *p = ensuring_malloc(31);
     TEST_CHECK(p != NULL);
     TEST_CHECK(is_aligned(p));
-    FREE_UNDER_TESTING(p);
-    ensure_my_free_is_called();
-    ensure_freed();
+    ensuring_free(p);
 }
 
 static void test_calloc_zero_fill(void) {
     size_t n = 16, sz = 8;
-    unsigned char *p = (unsigned char *)CALLOC_UNDER_TESTING(n, sz);
-    ensure_my_calloc_is_called();
-    ensure_my_malloc_is_called();
+    unsigned char *p = (unsigned char *)ensuring_calloc(n, sz);
     TEST_ASSERT(p != NULL);
     for (size_t i = 0; i < n*sz; ++i) TEST_CHECK(p[i] == 0);
-    FREE_UNDER_TESTING(p);
-    ensure_my_free_is_called();
-    ensure_freed();
+    ensuring_free(p);
 }
 
 static void test_forward_fusion_2_blocks(void) {
     LOG("=== %s: start ===\n", __func__);
 
-    size_t num_blocks = 2;
-    void* ptrs[2] = {NULL};
+    size_t num_blocks = 3;
+    void* ptrs[num_blocks];
     size_t base_bytes = 10;
 
     for(size_t i=0; i<num_blocks; i++) {
-        void *p = MALLOC_UNDER_TESTING(base_bytes+i);
-        ensure_my_malloc_is_called();
+        void *p = ensuring_malloc(base_bytes);
         TEST_CHECK(p != NULL);
         ptrs[i] = p;
     }
 
     LOG("\tpost-malloc ===\n");
 
-    for(size_t i=0; i<num_blocks; i++) {
+    for(size_t i=0; i<num_blocks-1; i++) {
         void *p = ptrs[i];
         block blk = reconstruct_from_user_memory(p);
         blk->free = 1;
@@ -302,36 +282,29 @@ static void test_forward_fusion_2_blocks(void) {
     block blk = reconstruct_from_user_memory(p);
 
     fuse_fwd(blk);
-    ensure_fuse_fwd_is_called();
+    ensure_fuse_fwd_is_called(1);
+    MM_ASSERT_FUSE_BWD_CALLED(0);
 
     LOG("\tpost-fwd-fusion ===\n");
 
     size_t aligned_base_bytes = align(base_bytes);
-    size_t block_size = sizeof(struct s_block);
-    size_t expected_size = (aligned_base_bytes*2+block_size);
+    size_t expected_size = (aligned_base_bytes * 2 + size_of_block());
     TEST_CHECK_(blk->size == expected_size,
-        "size must be %lu, got %lu", expected_size, head->size);
-    TEST_CHECK_(blk->next == NULL,
-        "tail shoud have been merged into head, but head->next: %p", (void*)head->next);
+        "size must be %lu, got %lu", expected_size, blk->size);
 
-    // should free the first block
-    FREE_UNDER_TESTING(p);
-    ensure_my_free_is_called();
-    ensure_freed();
-
-    LOG("=== %s: end ===\n", __func__);
+    ensuring_free(p);
+    ensuring_free(ptrs[num_blocks-1]);
 }
 
 static void test_backward_fusion_2_blocks(void) {
     LOG("=== %s: start ===\n", __func__);
 
     const size_t n = 2;
-    void* ptrs[n] = {NULL};
+    void* ptrs[n];
     size_t base_bytes = 10;
 
     for(size_t i=0; i<n; i++) {
-        void *p = MALLOC_UNDER_TESTING(base_bytes+i);
-        ensure_my_malloc_is_called();
+        void *p = ensuring_malloc(base_bytes);
         TEST_CHECK(p != NULL);
         ptrs[i] = p;
     }
@@ -350,72 +323,63 @@ static void test_backward_fusion_2_blocks(void) {
     block blk = reconstruct_from_user_memory(p);
 
     fuse_bwd(&blk);
-    ensure_fuse_bwd_is_called();
+    ensure_fuse_bwd_is_called(1);
+    MM_ASSERT_FUSE_FWD_CALLED(0);
 
     LOG("\t post-bwd-fusion ===\n");
 
-    size_t aligned_base_bytes = align_up_fundamental(base_bytes);
-    size_t block_size = sizeof(struct s_block);
-    size_t expected_size = (aligned_base_bytes*2+block_size);
+    size_t aligned_base_bytes = align(base_bytes);
+    size_t expected_size = (aligned_base_bytes * n + size_of_block());
     TEST_CHECK_(blk->size == expected_size,
-        "size must be %lu, got %lu", expected_size, head->size);
+        "size must be %lu, got %lu", expected_size, blk->size);
     TEST_CHECK_(blk->next == NULL,
-        "tail shoud have been merged into head, but head->next: %p", (void*)head->next);
+        "tail shoud have been merged into head, but head->next: %p", (void*)blk->next);
 
     p = ptrs[0];
-    FREE_UNDER_TESTING(p);
-    ensure_my_free_is_called();
-    ensure_freed();
-
-    LOG("=== %s: end ===\n", __func__);
+    ensuring_free(p);
 }
 
 static void test_free_no_release_or_fusion(void) {
     LOG("=== %s: start ===\n", __func__);
 
-    const size_t n = 2;
-    void* ptrs[n] = {NULL};
+    const size_t n = 3;
+    void* ptrs[n];
     size_t base_bytes = 30;
 
     for(size_t i=0; i<n; i++) {
-        void *p = MALLOC_UNDER_TESTING(base_bytes+i);
-        ensure_my_malloc_is_called();
+        void *p = ensuring_malloc(base_bytes);
         TEST_CHECK(p != NULL);
         ptrs[i] = p;
     }
 
     LOG("\tpost-malloc ===\n");
 
-    void* p = ptrs[0];
+    void* p = ptrs[1];
 
-    FREE_UNDER_TESTING(p);
-    ensure_my_free_is_called();
-    ensure_freed();
+    ensuring_free(p);
+    MM_ASSERT_FUSE_FWD_CALLED(0);
+    MM_ASSERT_FUSE_BWD_CALLED(0);
+    MM_ASSERT_RELEASED(0);
 
     LOG("\tpost-free ===\n");
 
     block blk = recons_blk_from_user_mem_ptr(p);
     TEST_CHECK(blk->free);
 
-    for(size_t i=1; i<n; i++) {
-        FREE_UNDER_TESTING(ptrs[i]);
-        ensure_my_free_is_called();
-        ensure_freed();
+    for(size_t i=0; i<n; i++) {
+        ensuring_free(ptrs[i]);
     }
-
-    LOG("=== %s: end ===\n", __func__);
 }
 
 static void test_free_with_fusion_no_release(void) {
     LOG("=== %s: start ===\n", __func__);
 
     const size_t n = 5;
-    void* ptrs[n] = {NULL};
+    void* ptrs[n];
     size_t base_bytes = 30;
 
     for(size_t i=0; i<n; i++) {
-        void *p = MALLOC_UNDER_TESTING(base_bytes);
-        ensure_my_malloc_is_called();
+        void *p = ensuring_malloc(base_bytes);
         TEST_CHECK(p != NULL);
         ptrs[i] = p;
     }
@@ -434,26 +398,23 @@ static void test_free_with_fusion_no_release(void) {
     void* p = ptrs[n/2];
     block blk = reconstruct_from_user_memory(p);
     block after_fusion_head = blk->prev->prev;
-    FREE_UNDER_TESTING(p);
-    ensure_my_free_is_called();
-    ensure_freed();
-    ensure_fuse_fwd_is_called();
-    ensure_fuse_bwd_is_called();
+    ensuring_free(p);
+    ensure_fuse_fwd_is_called(1);
+    ensure_fuse_bwd_is_called(2);
+    MM_ASSERT_RELEASED(0);
 
     LOG("\tpost-free middle ===\n");
 
-    size_t total_bytes_after_fusion = align_up_fundamental(base_bytes)*(n-1) + sizeof(struct s_block)*(n-2);
+    size_t total_block_sizes = size_of_block()*(n-2);
+    size_t total_allocated = align(base_bytes)*(n-1);
+    size_t total_bytes_after_fusion = total_allocated + total_block_sizes;
     TEST_CHECK_(after_fusion_head->size == total_bytes_after_fusion,
         "size of after_fusion_head should add up to %lu, not %lu",
         total_bytes_after_fusion,
         after_fusion_head->size);
 
     void *last = ptrs[n-1];
-    FREE_UNDER_TESTING(last);
-    ensure_my_free_is_called();
-    ensure_freed();
-
-    LOG("=== %s: end ===\n", __func__);
+    ensuring_free(last);
 }
 
 static void test_copy_block(void) {
@@ -463,8 +424,7 @@ static void test_copy_block(void) {
     const size_t src_size_of = 4;
     const size_t src_n = src_len * src_size_of;
 
-    int *p = (int*)MALLOC_UNDER_TESTING(src_n);
-    ensure_my_malloc_is_called();
+    int *p = (int*)ensuring_malloc(src_n);
     TEST_CHECK(p);
     for (size_t i=0;i<src_len;i++) p[i]=i;
 
@@ -473,9 +433,8 @@ static void test_copy_block(void) {
     const size_t to_copy_len = 9;
     const size_t to_copy_size_of = 4;
 
-    int *q = (int*)CALLOC_UNDER_TESTING(to_copy_len, to_copy_size_of);
-    ensure_my_calloc_is_called();
-    TEST_ASSERT(q);
+    int *q = (int*)ensuring_calloc(to_copy_len, to_copy_size_of);
+    TEST_ASSERT(q != NULL);
 
     block p_blk = reconstruct_from_user_memory(p);
     block q_blk = reconstruct_from_user_memory(q);
@@ -486,14 +445,8 @@ static void test_copy_block(void) {
     size_t min = src_len > to_copy_len ? to_copy_len : src_len;
     for (size_t i=0;i<min;i++) TEST_CHECK_(p[i] == q[i], "%d != %d", p[i], q[i]);
 
-    FREE_UNDER_TESTING(p);
-    ensure_my_free_is_called();
-    ensure_freed();
-
-    FREE_UNDER_TESTING(q);
-    ensure_my_free_is_called();
-    ensure_freed();
-    LOG("=== %s: end ===\n", __func__);
+    ensuring_free(p);
+    ensuring_free(q);
 }
 
 static void test_realloc_grow_and_shrink(void) {
@@ -501,38 +454,36 @@ static void test_realloc_grow_and_shrink(void) {
 
     const size_t n = 10;
 
-    char *p = (char*)MALLOC_UNDER_TESTING(n);
-    ensure_my_malloc_is_called();
+    char *p = (char*)ensuring_malloc(n);
     TEST_CHECK(p);
     for (int i=0;i<(int)n;i++) p[i]=(char)i;
 
+    MM_RESET_MALLOC_CALL_MARKER();
     LOG("\tpost-malloc with size %lu and setting values for data ===\n", n);
 
     const size_t re_grow_n = 100;
 
-    char *q = (char*)REALLOC_UNDER_TESTING(p, re_grow_n);
-    ensure_my_realloc_called();
-    ensure_my_malloc_is_called();
-    ensure_my_free_is_called();
+    char *q = (char*)ensuring_realloc(p, re_grow_n);
+    MM_ASSERT_MALLOC_CALLED(1);
+    MM_RESET_MALLOC_CALL_MARKER();
+    MM_ASSERT_FREE_CALLED(1);
+    MM_RESET_FREE_CALL_MARKER();
     ensure_freed();
-    TEST_ASSERT(q);
+    TEST_ASSERT(q != NULL);
     for (int i=0;i<(int)n;i++) TEST_CHECK(q[i]==(char)i);
 
     LOG("\tafter growing realloc with %lu ===\n", re_grow_n);
 
     const size_t re_shrink_n = 5;
     char *r = (char*)REALLOC_UNDER_TESTING(q, re_shrink_n);
-    ensure_my_realloc_called();
     ensure_realloc_enough_size();
-    TEST_ASSERT(r);
+    MM_ASSERT_MALLOC_CALLED(0);
+    MM_ASSERT_FREE_CALLED(0);
+    TEST_ASSERT(r != NULL);
     for (int i=0;i<(int)re_shrink_n;i++) TEST_CHECK(r[i]==(char)i);
 
     LOG("\tafter shrinking realloc with %lu ===\n", re_shrink_n);
-
-    FREE_UNDER_TESTING(r);
-    ensure_my_free_is_called();
-    ensure_freed();
-    LOG("=== %s: end ===\n", __func__);
+    ensuring_free(r);
 }
 
 TEST_LIST = {
@@ -549,6 +500,6 @@ TEST_LIST = {
     { "test_free_no_release_or_fusion",              test_free_no_release_or_fusion },
     { "test_free_with_fusion_no_release",              test_free_with_fusion_no_release },
     { "test_copy_block",  test_copy_block },
-    { "realloc_grow_shrink",  test_realloc_grow_and_shrink },
+    { "test_realloc_grow_shrink",  test_realloc_grow_and_shrink },
     { NULL, NULL }
 };

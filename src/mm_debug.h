@@ -31,7 +31,7 @@
         }                                                       \
       } while (0);
   #else
-    #define MM_ASSERT_LOG(label, actual, expected) ((void)label; (void)actual, (void)expected)
+    #define MM_ASSERT_LOG(label, actual, expected) {(void)label; (void)actual; (void)expected;}
   #endif
 
     #if defined(TRACK_RET_ADDR) 
@@ -128,6 +128,12 @@
   #define MM_ASSERT_REALLOC_ENOUGH_SIZE(times) \
     MM_ASSERT_EQ_INT("realloc_enough_size", realloc_enough_size, (times))
 
+  extern int released;
+  #define MM_RELEASED() (released += 1)
+  #define MM_RESET_ASSERT_RELEASED_MARKER() (released = 0)
+  #define MM_ASSERT_RELEASED(times) \
+    MM_ASSERT_EQ_INT("released", released, (times))
+
   extern int fuse_fwd_called;
   #define MM_FUSE_FWD_CALL() (fuse_fwd_called += 1)
   #define MM_RESET_FUSE_FWD_CALL_MARKER() (fuse_fwd_called = 0)
@@ -172,6 +178,10 @@
   #define MM_REALLOC_ENOUGH_SIZE() ((void)0)
   #define MM_RESET_REALLOC_ENOUGH_SIZE_MARKER() ((void)0)
   #define MM_ASSERT_REALLOC_ENOUGH_SIZE(times) ((void)times)
+
+  #define MM_RELEASED() ((void)0)
+  #define MM_RESET_ASSERT_RELEASED_MARKER() ((void)0)
+  #define MM_ASSERT_RELEASED(times) ((void)times)
 
   #define MM_FUSE_FWD_CALL() ((void)0)
   #define MM_RESET_FUSE_FWD_CALL_MARKER() ((void)0) 

@@ -122,10 +122,10 @@ void fuse_fwd(block b){
         return;
     }
     block cursor = b;
-    MM_FUSE_FWD_CALL();
     while( cursor->next && cursor->next->free ) {
         b->size += size_of_block() + cursor->next->size;
         cursor=cursor->next;
+        MM_FUSE_FWD_CALL();
     }
     b->next=cursor->next;
     b->end_of_alloc_mem = end(b);
@@ -142,11 +142,11 @@ void fuse_bwd(block* b){
     }
     block cursor = *b;
     block next = (*b)->next;
-    MM_FUSE_BWD_CALL();
     while (cursor->prev && cursor->prev->free) {
         block prev = cursor->prev;
         prev->size += size_of_block() + cursor->size;
         cursor = prev;
+        MM_FUSE_BWD_CALL();
     }
     cursor->next = next;
     if (next) 
@@ -249,6 +249,7 @@ void FREE(void* p) {
 
     // iff we truly release some pages, then we can project the change
     if ((char*) old_tail > (char*) CURRENT_BRK) {
+        MM_RELEASED();
         allocated_bytes -= back;
         if (!is_at_head)
             blk->prev->next = NULL;
@@ -319,7 +320,7 @@ void* MALLOC(size_t size) {
 void* realloc(void* p, size_t size){
     MM_REALLOC_CALL();
     // if we don't have anywhere to realloc, it is effectively a malloc
-    if (p == NULL) return malloc(size); 
+    if (p == NULL) return MALLOC(size); 
 
     if (!is_addr_valid_heap_addr(p)) return NULL;
 
@@ -331,7 +332,7 @@ void* realloc(void* p, size_t size){
     if (blk->size == size ) return p;
 
     // try to grow in-place
-    while (is_next_fusable(blk) && blk->size < size) {
+    while (blk->size < size && is_next_fusable(blk)) {
         if (fuse_next(blk) == -1) break;
     }
     // could not grow in place enough, allocate new and copy, free old
