@@ -6,25 +6,32 @@ WARN     := -Wall -Wextra -Werror -Wpedantic
 DBG      := -O0 -g
 # Do NOT use AddressSanitizer when you override malloc/free globally.
 SAN      := -fsanitize=undefined     # no ASan when overriding malloc
-TEST_DEFS     := -DTESTING -DENABLE_LOG -DENABLE_MM_SBRK                # turn on test-only asserts/hooks
+
+TESTING := -DTESTING
+ENABLE_LOG := -DENABLE_LOG 
+
 SHOW_SBRK_RELEASE_FAIL := -DSHOW_SBRK_RELEASE_FAIL
+EXPECT_RELEASE := -DEXPECT_RELEASE
+
+TRACK_RET_ADDR := -DTRACK_RET_ADDR
+
+INTERPOSE := -DINTERPOSE
+INTERPOSE_LOG := -DINTERPOSE_LOG
+
+# VERBOSE := $(TRACK_RET_ADDR) $(ENABLE_LOG) $(INTERPOSE_LOG)
+VERBOSE := $(TRACK_RET_ADDR) $(ENABLE_LOG)
+
+# TEST_DEFS  := $(TESTING) $(VERBOSE) $(INTERPOSE) $(SHOW_SBRK_RELEASE_FAIL) -DENABLE_MM_SBRK   # turn on test-only asserts/hooks 
+TEST_DEFS  := $(TESTING) $(VERBOSE) $(SHOW_SBRK_RELEASE_FAIL) -DENABLE_MM_SBRK   # turn on test-only asserts/hooks 
 
 # `-fno-builtin` prevents gcc from assuming builtin malloc/free semantics.
 INCLUDE_INTERNAL := -Isrc # only for when building lib/tests
 INCLUDE_PUBLIC   := -Iinclude
+
 # common compile flags 
-CFLAGS   := $(CSTD) $(WARN) $(DBG) $(SAN) -fno-builtin $(TEST_DEFS) $(INCLUDE_PUBLIC) $(INCLUDE_INTERNAL)
 ARFLAGS  := rcs
 UNAME_S := $(shell uname -s)
 LDLIBS := -lm
-ifeq ($(UNAME_S),Darwin)
-  # On macOS, use libtool to produce a static archive compatible with ld64
-  MAKE_STATIC_LIB = libtool -static -o
-  NEED_RANLIB     = 0
-else
-  MAKE_STATIC_LIB = $(AR) $(ARFLAGS)
-  NEED_RANLIB     = 1
-endif
 
 # --- layout ---
 SRC_DIR  := src
@@ -33,8 +40,27 @@ BLD_DIR  := build
 OBJ_DIR  := $(BLD_DIR)/obj
 TST_DIR  := $(BLD_DIR)/tests
 
+ifeq ($(UNAME_S),Darwin)
+	# On macOS, use libtool to produce a static archive compatible with ld64
+	MAKE_STATIC_LIB = libtool -static -o
+	NEED_RANLIB     = 0
+	INTERPOSE_SRC := $(SRC_DIR)/interpose.c
+	INTERPOSE_DYLIB := $(BLD_DIR)/libmalloc_interpose.dylib
+	TEST_DEFS += $(INTERPOSE)
+	ifneq ($(VERBOSE),)
+		TEST_DEFS += $(INTERPOSE_LOG)
+	endif
+else
+	AR ?= ar 
+	MAKE_STATIC_LIB = $(AR) $(ARFLAGS)
+	NEED_RANLIB     = 1
+endif
+
+CFLAGS   := $(CSTD) $(WARN) $(DBG) $(SAN) -fno-builtin $(TEST_DEFS) $(INCLUDE_PUBLIC) $(INCLUDE_INTERNAL)
+
 # --- sources ---
-SRCS     := $(wildcard $(SRC_DIR)/*.c)
+# filter-out interpose.c, it will only be compiled and linked in Darwin
+SRCS     := $(filter-out $(SRC_DIR)/interpose.c,$(wildcard $(SRC_DIR)/*.c))
 OBJS     := $(patsubst $(SRC_DIR)/%.c,$(OBJ_DIR)/%.o,$(SRCS))
 LIB      := $(BLD_DIR)/lib$(strip $(PROJECT)).a
 
@@ -69,6 +95,24 @@ $(TST_DIR)/%: $(TST_DIR)/%.o $(LIB)
 test: all
 	@for t in $(TESTS); do echo "==> $$t"; "$$t" || exit 1; done
 	@echo "All tests passed."
+
+ifeq ($(UNAME_S),Darwin)
+.PHONY: test-interpose
+
+$(INTERPOSE_DYLIB): $(INTERPOSE_SRC) | $(BLD_DIR)
+ # the real targets that interposition calls are implemented by malloc.c
+ # and we want interposing dylib to be able find it in runtime thus the 
+ # -undefined dynamic_lookup  
+	$(CC) -dynamiclib $(INCLUDE_INTERNAL) -undefined dynamic_lookup $(TESTING) $(VERBOSE) $(INTERPOSE) -o $@ $< src/non_allocating_print.c
+
+# Run all tests with our interpose dylib hooking malloc via DYLD_INSERT_LIBRARIES
+test-interpose: all $(INTERPOSE_DYLIB)
+	@for t in $(TESTS); do \
+	  echo "==> $$t (interposed)"; \
+	  DYLD_INSERT_LIBRARIES=$(INTERPOSE_DYLIB) "$$t" || exit 1; \
+	done; \
+	echo "All interposed tests passed."
+endif
 
 # --- directory creators ---
 dirs: | $(BLD_DIR) $(OBJ_DIR) $(TST_DIR)
