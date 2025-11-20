@@ -490,6 +490,24 @@ static void test_realloc_grow_and_shrink(void) {
     ensuring_free(r);
 }
 
+static void test_realloc_with_size_zero(void) {
+    LOG("=== %s: start ===\n", __func__);
+
+    const size_t n = 10;
+    char *p = (char*)ensuring_malloc(n);
+    TEST_CHECK(p);
+    MM_RESET_MALLOC_CALL_MARKER();
+
+    const size_t zero = 0;
+
+    char *q = (char*)ensuring_realloc(p, zero);
+    MM_ASSERT_MALLOC_CALLED(0);
+    MM_ASSERT_FREE_CALLED(1);
+    MM_RESET_FREE_CALL_MARKER();
+    ensure_freed();
+    TEST_ASSERT(q == NULL);
+}
+
 TEST_LIST = {
     { "test_align",                       test_align },
     { "test_invalid_addr_outside_before_for_is_valid_addr",                       test_invalid_addr_outside_before_for_is_valid_addr },
@@ -510,5 +528,6 @@ TEST_LIST = {
     { "test_free_with_fusion_no_release",              test_free_with_fusion_no_release },
     { "test_copy_block",  test_copy_block },
     { "test_realloc_grow_shrink",  test_realloc_grow_and_shrink },
+    { "test_realloc_with_size_zero",  test_realloc_with_size_zero },
     { NULL, NULL }
 };

@@ -322,6 +322,10 @@ void* realloc(void* p, size_t size){
     // if we don't have anywhere to realloc, it is effectively a malloc
     if (p == NULL) return MALLOC(size); 
 
+    if (size == 0) {
+        FREE(p);
+        return NULL;
+    }
     if (!is_addr_valid_heap_addr(p)) return NULL;
 
     block blk = reconstruct_from_user_memory((const void*)p);
