@@ -1,62 +1,89 @@
 #pragma once
 
 #ifdef TESTING
+  #include <unistd.h>
 
-  #ifdef TRACK_RET_ADDR
-    #include <internal.h>
-    #ifdef __GNUC__
-    #  define MM_RET_ADDR() __builtin_extract_return_addr(__builtin_return_address(0))
-    #else
-    #  define MM_RET_ADDR() NULL
-    #endif
+  extern void debug_write_str(const char *s);
+  extern void debug_write_ptr(const void *p);
+  extern void debug_write_u64(size_t v);
 
-    typedef struct {
-        block blk;
-        void *ret_addr;
-    } mm_callsite_entry;
+  static inline void mm_fatal(const char *msg) {
+      debug_write_str(msg);
+      _exit(1);   // or __builtin_trap();
+  }
 
-    extern mm_callsite_entry mm_callsites[1024];
-    extern size_t mm_callsite_count;
-
-    #define LATEST_CALLERS()                                              {\
-      do {                                                                 \
-      for (size_t i = 0; i < mm_callsite_count ; i++)                      \
-      {                                                                    \
-        mm_callsite_entry cse = mm_callsites[i];                           \
-        if (!cse.blk) continue;                                            \
-        fprintf(stderr,                                                    \
-        " [MM_RET_ADDR] (%lu) size=%lu ret_addr=%p, free: %d\n",        \
-        i, (cse.blk->size), (cse.ret_addr), (cse.blk->free)); \
-      }                                                                    \
-    }while(0);                                                             \
-    fprintf(stderr, "---------\n");}
-
-    #define MM_ASSERT_EQ_INT_W_CALLERS(label, actual, expected)          {\
-      do {                                                                \
-        if ((actual) != (expected)) {                                     \
-          fprintf(stderr,                                                 \
-                  "[MM_ASSERT] %s: actual=%d expected=%d\n",              \
-                  (label), (int)(actual), (int)(expected));               \
-          LATEST_CALLERS()                                                \
-          assert((actual) == (expected));                                 \
-        }                                                                 \
-      } while (0);                                                        \
-    }
-  #endif
-
-  #include <assert.h>
-  #define MM_ASSERT(x) assert(x)
+  #define MM_ASSERT(x) \
+    do { if (!(x)) mm_fatal("MM_ASSERT failed: " #x); } while (0)
   #define MM_UNREACHABLE() assert(!"unreachable")
 
-  #define MM_ASSERT_EQ_INT(label, actual, expected)           \
-    do {                                                      \
-      if ((actual) != (expected)) {                           \
-        fprintf(stderr,                                       \
-                "[MM_ASSERT] %s: actual=%d expected=%d\n",    \
-                (label), (int)(actual), (int)(expected));     \
-        assert((actual) == (expected));                       \
-      }                                                       \
-    } while (0)
+  #ifdef ENABLE_LOG
+    #define MM_ASSERT_LOG(label, actual, expected)           \
+      do {                                                      \
+        if ((actual) != (expected)) {                           \
+            debug_write_str("[MM_ASSERT] ");                                \
+            debug_write_str(label);                                         \
+            debug_write_str(": actual=");                                   \
+            debug_write_u64(actual);                                        \
+            debug_write_str(", expected=");                                 \
+            debug_write_u64(expected);                                      \
+            debug_write_str("\n");                                          \
+        }                                                       \
+      } while (0);
+  #else
+    #define MM_ASSERT_LOG(label, actual, expected) ((void)label; (void)actual, (void)expected)
+  #endif
+
+    #if defined(TRACK_RET_ADDR) 
+      #include <internal.h>
+      #ifdef __GNUC__
+        #define MM_RET_ADDR() __builtin_extract_return_addr(__builtin_return_address(0))
+        // #define MM_RET_ADDR() __builtin_return_address(0)
+      #else
+        #define MM_RET_ADDR() NULL
+      #endif
+
+      typedef struct {
+          block blk;
+          void *ret_addr;
+      } mm_callsite_entry;
+
+      extern mm_callsite_entry mm_callsites[1024];
+      extern size_t mm_callsite_count;
+
+      #define LATEST_CALLERS()                                              {\
+        do {                                                                 \
+        for (size_t i = 0; i < mm_callsite_count ; i++)                      \
+        {                                                                    \
+          mm_callsite_entry cse = mm_callsites[i];                           \
+          if (!cse.blk) continue;                                            \
+          debug_write_str("[MM_RET_ADDR] (");                                \
+          debug_write_u64(i);                                                \
+          debug_write_str(") size=");                                        \
+          debug_write_u64(cse.blk->size);                                    \
+          debug_write_str(" ret_addr=");                                     \
+          debug_write_ptr(cse.ret_addr);                                     \
+          debug_write_str(" free:");                                         \
+          debug_write_u64(cse.blk->free);                                    \
+          debug_write_str("\n---------\n");                                  \
+        }                                                                    \
+      }while(0);                                                             \
+      }
+
+      #define MM_ASSERT_EQ_INT_W_CALLERS(label, actual, expected)          {\
+        do {                                                                \
+            MM_ASSERT_LOG((label), (actual), (expected))                   \
+            LATEST_CALLERS()                                                \
+            MM_ASSERT((actual) == (expected));                                 \
+        } while (0);                                                        \
+      }
+    #endif
+
+  #define MM_ASSERT_EQ_INT(label, actual, expected)          {\
+    do {                                                                \
+        MM_ASSERT_LOG((label), (actual), (expected))                   \
+        MM_ASSERT((actual) == (expected));                                 \
+    } while (0);                                                        \
+  }
 
   extern int calloc_called;
   #define MM_CALLOC_CALL() (calloc_called += 1)
@@ -123,34 +150,34 @@
 
   #define MM_CALLOC_CALL() ((void)0)
   #define MM_RESET_CALLOC_CALL_MARKER() ((void)0)
-  #define MM_ASSERT_CALLOC_CALLED() ((void)0)
+  #define MM_ASSERT_CALLOC_CALLED(times) ((void)times)
 
   #define MM_FREED() ((void)0)
   #define MM_RESET_FREED_MARKER() ((void)0)
-  #define MM_ASSERT_FREED(times) ((void)0)
+  #define MM_ASSERT_FREED(times) ((void)times)
 
   #define MM_FREE_CALL() ((void)0)
   #define MM_RESET_FREE_CALL_MARKER() ((void)0)
-  #define MM_ASSERT_FREE_CALLED(times)  ((void)0)
+  #define MM_ASSERT_FREE_CALLED(times)  ((void)times)
 
   #define MM_MALLOC_CALL() ((void)0)
   #define MM_RESET_MALLOC_CALL_MARKER() ((void)0)
-  #define MM_ASSERT_MALLOC_CALLED() ((void)0)
+  #define MM_ASSERT_MALLOC_CALLED(times) ((void)times)
 
   #define MM_REALLOC_CALL() ((void)0)
   #define MM_RESET_REALLOC_MARKER() ((void)0)
-  #define MM_ASSERT_REALLOC_CALLED(times) ((void)0)
+  #define MM_ASSERT_REALLOC_CALLED(times) ((void)times)
 
   #define MM_REALLOC_ENOUGH_SIZE() ((void)0)
   #define MM_RESET_REALLOC_ENOUGH_SIZE_MARKER() ((void)0)
-  #define MM_ASSERT_REALLOC_ENOUGH_SIZE(times) ((void)0)
+  #define MM_ASSERT_REALLOC_ENOUGH_SIZE(times) ((void)times)
 
   #define MM_FUSE_FWD_CALL() ((void)0)
   #define MM_RESET_FUSE_FWD_CALL_MARKER() ((void)0) 
-  #define MM_ASSERT_FUSE_FWD_CALLED(times) ((void)0) 
+  #define MM_ASSERT_FUSE_FWD_CALLED(times) ((void)times) 
 
   #define MM_FUSE_BWD_CALL() ((void)0)
   #define MM_RESET_FUSE_BWD_CALL_MARKER() ((void)0)
-  #define MM_ASSERT_FUSE_BWD_CALLED(times) ((void)0)
+  #define MM_ASSERT_FUSE_BWD_CALLED(times) ((void)times)
 
 #endif
