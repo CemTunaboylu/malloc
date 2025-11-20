@@ -266,8 +266,6 @@ void* MALLOC(size_t size) {
     #ifdef ENABLE_LOG
         debug_write_str("[mm_malloc] size=");
         debug_write_u64(size);
-        debug_write_str("[mm_malloc] malloc addr=");
-        debug_write_ptr((const void*)malloc);
     #endif
 #endif
     MM_MALLOC_CALL();
