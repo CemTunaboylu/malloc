@@ -11,7 +11,8 @@ SAN      := -fsanitize=undefined     # no ASan when overriding malloc
 TESTING := -DTESTING
 ENABLE_LOG := -DENABLE_LOG 
 
-SHOW_SBRK_RELEASE_FAIL := -DSHOW_SBRK_RELEASE_FAIL
+SBRK_EXPECTATION := -DSHOW_SBRK_RELEASE_SUCCEEDS 
+# SBRK_EXPECTATION := -DSHOW_SBRK_RELEASE_FAIL 
 EXPECT_RELEASE := -DEXPECT_RELEASE
 
 TRACK_RET_ADDR := -DTRACK_RET_ADDR
@@ -19,11 +20,9 @@ TRACK_RET_ADDR := -DTRACK_RET_ADDR
 INTERPOSE := -DINTERPOSE
 INTERPOSE_LOG := -DINTERPOSE_LOG
 
-# VERBOSE := $(TRACK_RET_ADDR) $(ENABLE_LOG) $(INTERPOSE_LOG)
-VERBOSE := $(TRACK_RET_ADDR) $(ENABLE_LOG)
+VERBOSE ?= $(TRACK_RET_ADDR) $(ENABLE_LOG)
 
-# TEST_DEFS  := $(TESTING) $(VERBOSE) $(INTERPOSE) $(SHOW_SBRK_RELEASE_FAIL) -DENABLE_MM_SBRK   # turn on test-only asserts/hooks 
-TEST_DEFS  := $(TESTING) $(VERBOSE) $(SHOW_SBRK_RELEASE_FAIL) -DENABLE_MM_SBRK   # turn on test-only asserts/hooks 
+TEST_DEFS  := $(TESTING) $(VERBOSE) $(SBRK_EXPECTATION) -DENABLE_MM_SBRK   # turn on test-only asserts/hooks 
 
 # `-fno-builtin` prevents gcc from assuming builtin malloc/free semantics.
 INCLUDE_INTERNAL := -Isrc # only for when building lib/tests
