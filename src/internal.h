@@ -26,6 +26,7 @@ void* allocated_memory(block b);
 block reconstruct_from_user_memory(const void* p); 
 
 #ifdef TESTING
+    extern size_t size_of_block(void);
     void deep_copy_block(block src, block to);
     int is_addr_valid_heap_addr(void *p);
     void fuse_fwd(block);
