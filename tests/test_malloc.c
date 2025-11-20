@@ -83,7 +83,7 @@ static void pre_test_sanity(void) {
     base_free_blocks  = _mm_free_blocks();
     base_brk          = CURRENT_BRK;
 
-#ifdef TRACK_CALLER
+#ifdef TRACK_RET_ADDR
     LATEST_CALLERS();
 #endif
 }
@@ -98,7 +98,7 @@ static void post_test_sanity(void) {
         "free block mismatch: %zu -> %zu",base_free_blocks, _mm_free_blocks());
 #endif
 
-#ifdef TRACK_CALLER
+#ifdef TRACK_RET_ADDR
     if (_mm_total_blocks() != base_total_blocks) {
         LATEST_CALLERS();
     }
