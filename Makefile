@@ -1,5 +1,6 @@
-GIT_HASH ?= $(shell git log --format="%h" -n 1) # get the git hash for image tag
+GIT_HASH ?= $(shell git --no-pager log --format="%h" -n 1) # get the git hash for image tag
 PROJECT  := malloc
+IMAGE := $(PROJECT):$(GIT_HASH)
 CC       ?= gcc
 CSTD     ?= -std=c17
 WARN     := -Wall -Wextra -Werror -Wpedantic
@@ -68,7 +69,7 @@ LIB      := $(BLD_DIR)/lib$(strip $(PROJECT)).a
 TEST_SOURCES := $(filter-out $(TEST_DIR)/acutest.h,$(wildcard $(TEST_DIR)/*.c))
 TESTS    := $(patsubst $(TEST_DIR)/%.c,$(TST_DIR)/%,$(TEST_SOURCES))
 
-.PHONY: all clean test dirs
+.PHONY: all clean test dirs test-container investigation-container
 
 all: dirs $(LIB) $(TESTS)
 
@@ -96,6 +97,7 @@ test: all
 	@for t in $(TESTS); do echo "==> $$t"; "$$t" || exit 1; done
 	@echo "All tests passed."
 
+# ---- interposing ----
 ifeq ($(UNAME_S),Darwin)
 .PHONY: test-interpose
 
@@ -113,6 +115,7 @@ test-interpose: all $(INTERPOSE_DYLIB)
 	done; \
 	echo "All interposed tests passed."
 endif
+# ---- interposing ----
 
 # --- directory creators ---
 dirs: | $(BLD_DIR) $(OBJ_DIR) $(TST_DIR)
@@ -120,5 +123,23 @@ dirs: | $(BLD_DIR) $(OBJ_DIR) $(TST_DIR)
 $(BLD_DIR) $(OBJ_DIR) $(TST_DIR):
 	@mkdir -p $@
 
+test-container:
+	docker build -t $(IMAGE) .
+	docker run --rm $(IMAGE)
+
+# if just want to exec into it, set USE_GDB to nothing/empty: make investigation-container USE_GDB=
+USE_GDB ?= 1
+
+investigation-container:
+	docker build -f Dockerfile.investigation -t malloc-investigation .
+	docker run --rm -it \
+	-e USE_GDB=$(USE_GDB) \
+	--platform=linux/arm64 \
+	-v $(PWD):/app \
+	-w /app \
+	malloc-investigation
+
 clean:
 	$(RM) -r $(BLD_DIR)
+	docker rmi -f $(IMAGE) >/dev/null 2>&1 || true; 
+	docker rmi -f malloc-investigation >/dev/null 2>&1 || true; 

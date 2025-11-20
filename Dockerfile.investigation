@@ -1,0 +1,22 @@
+FROM debian:stable-slim
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    gdb \
+    make \
+    git \
+    less \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+# Work inside /app, but don't bake the source into the image.
+# Mount the source from the host at runtime instead.
+WORKDIR /app
+
+CMD ["bash", "-lc", "\
+if [ -z \"${USE_GDB}\" ]; then\
+  exec /bin/bash;\
+else\
+  cd /app && make clean all && exec gdb build/tests/test_malloc;\
+fi\
+"]
