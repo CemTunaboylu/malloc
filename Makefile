@@ -1,6 +1,7 @@
 GIT_HASH ?= $(shell git --no-pager log --format="%h" -n 1) # get the git hash for image tag
 PROJECT  := malloc
 IMAGE := $(PROJECT):$(GIT_HASH)
+UNAME_S := $(shell uname -s)
 CC       ?= gcc
 CSTD     ?= -std=c17
 WARN     := -Wall -Wextra -Werror -Wpedantic
@@ -11,8 +12,12 @@ SAN      := -fsanitize=undefined     # no ASan when overriding malloc
 TESTING := -DTESTING
 ENABLE_LOG := -DENABLE_LOG 
 
-SBRK_EXPECTATION := -DSHOW_SBRK_RELEASE_SUCCEEDS 
-# SBRK_EXPECTATION := -DSHOW_SBRK_RELEASE_FAIL 
+ifeq ($(UNAME_S),Darwin)
+	SBRK_EXPECTATION := -DSHOW_SBRK_RELEASE_FAIL
+else
+	SBRK_EXPECTATION := -DSHOW_SBRK_RELEASE_SUCCEEDS 
+endif
+
 EXPECT_RELEASE := -DEXPECT_RELEASE
 
 TRACK_RET_ADDR := -DTRACK_RET_ADDR
@@ -20,7 +25,8 @@ TRACK_RET_ADDR := -DTRACK_RET_ADDR
 INTERPOSE := -DINTERPOSE
 INTERPOSE_LOG := -DINTERPOSE_LOG
 
-VERBOSE ?= $(TRACK_RET_ADDR) $(ENABLE_LOG)
+# VERBOSE ?= $(TRACK_RET_ADDR) $(ENABLE_LOG)
+VERBOSE ?= $(ENABLE_LOG)
 
 TEST_DEFS  := $(TESTING) $(VERBOSE) $(SBRK_EXPECTATION) -DENABLE_MM_SBRK   # turn on test-only asserts/hooks 
 
@@ -30,7 +36,6 @@ INCLUDE_PUBLIC   := -Iinclude
 
 # common compile flags 
 ARFLAGS  := rcs
-UNAME_S := $(shell uname -s)
 LDLIBS := -lm
 
 # --- layout ---
