@@ -62,6 +62,12 @@ static void  *base_brk;
 
 static void pre_test_sanity(void) {
 #ifdef ENABLE_LOG
+    static int atexit_registered = 0;
+
+    if (!atexit_registered) {
+        atexit(free_resources);
+        atexit_registered = 1;
+    }
     if (!global_test_log){
         global_test_log = fopen("tests/malloc_tests.log", "a");
         TEST_CHECK_(global_test_log, "cannot open test_log_file, but tests will continue");
@@ -544,8 +550,5 @@ TEST_LIST = {
     { "test_free_with_fusion_no_release",              test_free_with_fusion_no_release },
     { "test_copy_block",  test_copy_block },
     { "realloc_grow_shrink",  test_realloc_grow_and_shrink },
-#ifdef ENABLE_LOG
-    { "free_resources",              free_resources},
-#endif
     { NULL, NULL }
 };
