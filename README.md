@@ -159,7 +159,7 @@ The block header is intentionally aligned and verified in tests.
 
 ## Testing
 
-Tests live in tests/test_malloc.c and cover:
+Tests live in `tests/test_malloc.c` and cover:
 
 - alignment
 - block shape introspection
@@ -168,7 +168,8 @@ Tests live in tests/test_malloc.c and cover:
 - calloc zeroing
 - realloc grow/shrink semantics
 - data copy correctness
-- no persistent leaks between tests
+- releasing memory (on container)
+- interposition of `calloc`, `free`, `malloc`, `realloc` on MacOS
 
 All tests enforce strict debug counters in TESTING mode.
 
