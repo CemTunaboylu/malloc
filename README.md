@@ -71,6 +71,8 @@ Tests don’t fork; everything runs inside one process for determinism.
 malloc/
 ├── README.md                ← you are here
 ├── Makefile                 ← builds allocator + tests
+├── Dockerfile               ← reproducible build environment
+├── Dockerfile.investigation ← reproducible investigation environment
 ├── include/
 │   └── malloc/malloc.h      ← exported API symbols
 ├── src/
@@ -80,10 +82,12 @@ malloc/
 │   ├── mm_debug.*           ← debug counters (TESTING)
 │   ├── probes.c             ← test inspection helpers
 │   └── sys_call_wrappers.c  ← brk/sbrk/mmap wrappers
-└── tests/
-    ├── acutest.h
-    ├── test_malloc.c
-    └── probe.h
+├── tests/
+│  ├── acutest.h
+│  ├── test_malloc.c
+│  └── probe.h
+└── githooks/                ← githooks (here for version control), `make install-git-hooks` to install them
+    └── pre-push             ← pre-push hook, runs `test-interpose` if on mac + `make test-container` as guard before pushing
 ```
 
 ⸻
@@ -99,6 +103,20 @@ malloc/
 ### Build + Run Tests
 
 `make clean test`
+
+### Build and test inside Docker
+
+```sh
+make test-container 
+```
+
+### Build an interactive investigation container
+
+If `USE_GDB` is set, directly execs into the gdb session of the test binary, otherwise execs into the container
+
+```sh
+make investigation-container  [USE_GDB=] 
+```
 
 ⸻
 
