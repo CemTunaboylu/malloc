@@ -61,6 +61,13 @@ These are fully stubbed for testing and demonstrate differences between glibc an
 
 Tests don’t fork; everything runs inside one process for determinism.
 
+📘 **Deep Dive: Linux vs macOS Dynamic Linking Behavior**
+
+Curious how ELF symbol resolution, Mach-O two-level namespaces, `PLT`/`GOT`, and `dyld` interposition affect this allocator?
+
+👉 See the full investigation in the project wiki:  
+**[Dynamic Linking Deep Dive](../../wiki/Dynamic_Linking_Deep_Dive)**
+
 ## Project Layout
 
 ```md
