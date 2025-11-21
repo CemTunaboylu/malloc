@@ -147,6 +147,22 @@ The block header is intentionally aligned and verified in tests.
 
 **Note**: Modern kernels rarely shrink the program break — the test suite accounts for this.
 
+## Interposition Mode (macOS)
+
+On macOS, the project can be built in interposition mode, where a dylib transparently intercepts calls to:
+
+- `malloc`
+- `free`
+- `calloc`
+- `realloc`
+- `malloc_size`
+
+This allows testing application-level behavior by routing all calls to our allocators.
+
+We use a `DYLD_INSERT_LIBRARIES=...` mechanism and a dedicated interposer defined in `src/interpose.c`.
+
+Note: Interposed tests are intentionally limited: tests that rely on precise block layout control (fusion, exact counter assertions, etc.) are disabled under interposition because system libraries consistently allocate between test steps.
+
 ## Testing
 
 Tests live in `tests/test_malloc.c` and cover:
@@ -163,7 +179,76 @@ Tests live in `tests/test_malloc.c` and cover:
 
 All tests enforce strict debug counters in TESTING mode.
 
+## Debugging & Investigation Tools
+
+The project includes several tools to help inspect allocator behavior:
+
+### Non-allocating print helpers   (src/non_allocating_print.c)
+
+Safe logging routines that do not allocate, used when debugging allocator internals.
+
+### Callsite tracking
+
+Enabled via `-DTRACK_RET_ADDR`. Records return addresses and block metadata for up to 1024 malloc callsites, printed via `LATEST_CALLERS()`.
+
+### OS Interaction Logs
+
+All system call wrappers (mm_sbrk, mm_brk, mm_mmap, etc.) can be logged for deterministic behavior in testing.
+
+### Investigation container
+
+Build and drop into a GDB-capable environment:
+
+```sh
+make investigation-container USE_GDB=1
+```
+
+or disable GDB to explore the container:
+
+```sh
+make investigation-container USE_GDB=
+```
+
 ## Limitations / Non-Goals
+
+### Notes on Determinism and Test Environment
+
+The tests (counters) rely on deterministic allocator behavior, which are unfortunately hard to satisfy consistently. In best effort, all tests try to measure the delta between initial conditions to test the given behavior.
+
+Some tests that require particularly deterministic allocator behavior are:
+
+a. fusion of free blocks
+b. release of free tail block
+
+If a slipping allocation takes place, the test will fail:
+
+a. contiguity of free blocks are interrupted, thus fusion behaviour changes
+b. the block to be released may no longer be the tail, and won't be released (cannot be)
+
+In our tests:
+
+- Linux test binaries override malloc globally, causing system libraries to use the allocator as well. This is achieved by function interposition on Mac, by intercepting all calls within the process to libc implementations and injecting our implementations.
+- This results in additional allocations during process startup or stdio initialization.
+- Tests relying on precise counter equality or block list shape may fail under:
+  - interposition mode
+  - unforeseen glibc allocations
+  - sanitizer runtimes
+
+The test suite is structured so these tests are excluded when running under interposition (fusion to be specific). Other tests try to isolate call counters to specific callsites, and assert deltas rather than absolute values.
+
+## Design Guarantees
+
+The allocator guarantees:
+
+- All the memory allocated by the allocators satisfy max alignment required by the system that it runs on dynamically
+  - `malloc()`, `calloc()` and `realloc` returns aligned memory (`_Alignof(max_align_t)`)
+- First-fit search
+- Deterministic block header layout
+- Fusion (forward and backward)
+- Optional callsite tracking
+- OS interactions abstracted through deterministic wrappers
+- Single-threaded correctness
+- Strict block structure and pointer validity checking in TESTING mode
 
 This project intentionally avoids:
 
