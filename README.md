@@ -10,8 +10,6 @@ This project is intentionally simple, heavily instrumented, and designed as a le
 
 The allocator overrides the global symbols (malloc, etc.) inside its own translation unit, enabling tests to exercise the implementation without using `LD_PRELOAD` tricks via statically linking.
 
-⸻
-
 ## Features
 
 ✔ Fundamental alignment
@@ -63,11 +61,9 @@ These are fully stubbed for testing and demonstrate differences between glibc an
 
 Tests don’t fork; everything runs inside one process for determinism.
 
-⸻
-
 ## Project Layout
 
-```
+```md
 malloc/
 ├── README.md                ← you are here
 ├── Makefile                 ← builds allocator + tests
@@ -89,8 +85,6 @@ malloc/
 └── githooks/                ← githooks (here for version control), `make install-git-hooks` to install them
     └── pre-push             ← pre-push hook, runs `test-interpose` if on mac + `make test-container` as guard before pushing
 ```
-
-⸻
 
 ## Building & Running
 
@@ -118,15 +112,13 @@ If `USE_GDB` is set, directly execs into the gdb session of the test binary, oth
 make investigation-container  [USE_GDB=] 
 ```
 
-⸻
-
 ## Design Overview
 
 ### Block Layout
 
 Each block in the heap has the following layout:
 
-```
+```md
 +-----------------------------+
 | size                        |  ← bytes in payload
 | next                        |  ← pointer to next block
@@ -155,8 +147,6 @@ The block header is intentionally aligned and verified in tests.
 
 **Note**: Modern kernels rarely shrink the program break — the test suite accounts for this.
 
-⸻
-
 ## Testing
 
 Tests live in `tests/test_malloc.c` and cover:
@@ -173,8 +163,6 @@ Tests live in `tests/test_malloc.c` and cover:
 
 All tests enforce strict debug counters in TESTING mode.
 
-⸻
-
 ## Limitations / Non-Goals
 
 This project intentionally avoids:
@@ -187,8 +175,6 @@ This project intentionally avoids:
 
 The goal is educational clarity, not completeness.
 
-⸻
-
 ## Future Work
 
 - Real mmap large-allocation path
@@ -196,8 +182,6 @@ The goal is educational clarity, not completeness.
 - Over-aligned `aligned_alloc`
 - Stress tests + randomized fuzzing
 - Git hooks for formatting/linting
-
-⸻
 
 ## License
 
