@@ -150,3 +150,12 @@ clean:
 	$(RM) -r $(BLD_DIR)
 	docker rmi -f $(IMAGE) >/dev/null 2>&1 || true; 
 	docker rmi -f malloc-investigation >/dev/null 2>&1 || true; 
+
+LOGS := $(wildcard investigation_logs/*.log)
+HTML := $(LOGS:.log=.html)
+
+logs-html: $(HTML)
+
+# Note: assumes ansi-to-html is installed and in $PATH (e.g. npm install -g ansi-to-html or system package).
+%.html: %.log
+	ansi-to-html $< > $@
