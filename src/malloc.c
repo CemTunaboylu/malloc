@@ -238,7 +238,6 @@ void FREE(void* p) {
 
     if (is_at_tail) {
 
-#ifdef ENABLE_MM_SBRK
     size_t back = size_of_block() + blk->size; 
     void* old_tail = CURRENT_BRK;
     MM_ASSERT(allocated_bytes >= back);
@@ -257,13 +256,6 @@ void FREE(void* p) {
             head = NULL;
     }
     MM_ASSERT((char*) old_tail > (char*) CURRENT_BRK); 
-
-#elif defined(ENABLE_MM_BRK)
-    if (mm_brk(blk) == -1) {
-        perror("error while releasing the tail");
-        return;
-    }
-#endif
     }
 }
 
