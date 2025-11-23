@@ -73,7 +73,7 @@ block extend_heap(block* last, size_t aligned_size){
         perror("failed to allocate memory");
         return NULL;
     }
-    MM_ASSERT((void*) brk == requested);
+    MM_ASSERT((void*) brk < requested);
     brk->size = aligned_size;
     brk->next = NULL;
     brk->prev= NULL;
@@ -256,11 +256,7 @@ void FREE(void* p) {
         else  
             head = NULL;
     }
-    #ifdef SHOW_SBRK_RELEASE_FAIL
-        MM_ASSERT((char*) old_tail == (char*) CURRENT_BRK); 
-    #elif defined(SHOW_SBRK_RELEASE_SUCCEEDS)
-        MM_ASSERT((char*) old_tail > (char*) CURRENT_BRK); 
-    #endif
+    MM_ASSERT((char*) old_tail > (char*) CURRENT_BRK); 
 
 #elif defined(ENABLE_MM_BRK)
     if (mm_brk(blk) == -1) {

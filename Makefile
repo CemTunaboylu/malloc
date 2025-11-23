@@ -12,11 +12,8 @@ SAN      := -fsanitize=undefined     # no ASan when overriding malloc
 TESTING := -DTESTING
 ENABLE_LOG := -DENABLE_LOG 
 
-ifeq ($(UNAME_S),Darwin)
-	SBRK_EXPECTATION := -DSHOW_SBRK_RELEASE_FAIL
-else
-	SBRK_EXPECTATION := -DSHOW_SBRK_RELEASE_SUCCEEDS 
-endif
+# system call wrappers now immitate a release
+SBRK_EXPECTATION := -DSHOW_SBRK_RELEASE_SUCCEEDS 
 
 EXPECT_RELEASE := -DEXPECT_RELEASE
 
