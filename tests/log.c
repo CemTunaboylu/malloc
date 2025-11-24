@@ -14,6 +14,10 @@
     __attribute__((constructor))
     void init_global_test_log(void) {
         global_test_log = fopen("tests/malloc_tests.log", "a");
+        if (global_test_log == NULL) {
+            global_test_log_fd = fileno(stderr);
+            return;
+        } 
         global_test_log_fd = fileno(global_test_log);
         atexit(free_resources);
     }
