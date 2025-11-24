@@ -37,12 +37,6 @@ void init_aligned_size_of_block(void) {
     SIZE_OF_BLOCK = align(sizeof(struct s_block));
 }
 
-#ifdef ENABLE_LOG
-    extern void debug_write_str(const char *s);
-    extern void debug_write_ptr(const void *p);
-    extern void debug_write_u64(size_t v);
-#endif
-
 block head = NULL; 
 static size_t allocated_bytes;
 
@@ -279,14 +273,6 @@ void FREE(void* p) {
 }
 
 void* MALLOC(size_t size) {
-#ifdef TRACK_RET_ADDR
-    void* ret_addr = MM_RET_ADDR();
-    #ifdef ENABLE_LOG
-        debug_write_str("[mm_malloc] size=");
-        debug_write_u64(size);
-        debug_write_str("\n");
-    #endif
-#endif
     MM_MALLOC_CALL();
     if (size == 0) return NULL; 
 
@@ -310,14 +296,6 @@ void* MALLOC(size_t size) {
     }
 
     blk->free = 0;
-#ifdef TRACK_RET_ADDR
-    if (mm_callsite_count < 1024) {
-            mm_callsites[mm_callsite_count].blk = blk;
-            mm_callsites[mm_callsite_count].ret_addr = ret_addr;
-            mm_callsite_count++;
-        }
-#endif
-
     if (is_splittable(blk, aligned_size)) {
         split_block(blk, aligned_size);
     }

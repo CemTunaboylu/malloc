@@ -1,12 +1,5 @@
 #ifdef TESTING 
 
-    #ifdef ENABLE_LOG
-        #ifndef __APPLE__
-            #define _POSIX_C_SOURCE 200809L
-        #endif
-
-    #endif
-
     #include <stdalign.h>
     #include <stddef.h>
     #include <stdint.h>
@@ -63,18 +56,9 @@
         base_total_blocks = _mm_total_blocks();
         base_free_blocks  = _mm_free_blocks();
         base_brk          = CURRENT_BRK;
-
-        #ifdef TRACK_RET_ADDR
-            LATEST_CALLERS();
-        #endif
     }
 
     static void post_test_sanity(void) {
-    #ifdef TRACK_RET_ADDR
-        if (_mm_total_blocks() != base_total_blocks) {
-            LATEST_CALLERS();
-        }
-    #endif
     }
 
     static inline int is_aligned(void* p) {
