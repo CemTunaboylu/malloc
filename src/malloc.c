@@ -366,21 +366,3 @@ void* REALLOC(void* p, size_t size){
 
     return p;
 }
-
-#ifdef INTERPOSE
-    void  interposing_free(void* p) { FREE(p);}
-    void* interposing_calloc(size_t len, size_t size_of) { return CALLOC(len, size_of);}
-    void* interposing_malloc(size_t size) { return MALLOC(size);}
-    void* interposing_realloc(void* p, size_t size){ return REALLOC(p, size);}
-
-    size_t interposing_malloc_size(const void* p) {
-        if (!is_addr_valid_heap_addr((void*)p)) {
-            // Not from our heap; we *could* return 0,
-            // but that will still trip ObjC’s “corrupt” check.
-            // For now, say 0 and see how far we get.
-            return 0;
-        }
-        block blk = reconstruct_from_user_memory(p);
-        return blk->size;
-    }
-#endif

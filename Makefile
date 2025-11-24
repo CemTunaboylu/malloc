@@ -17,9 +17,6 @@ SBRK_EXPECTATION := -DSHOW_SBRK_RELEASE_SUCCEEDS
 
 TRACK_RET_ADDR := -DTRACK_RET_ADDR
 
-INTERPOSE := -DINTERPOSE
-INTERPOSE_LOG := -DINTERPOSE_LOG
-
 # VERBOSE ?= $(TRACK_RET_ADDR) $(ENABLE_LOG)
 VERBOSE ?= $(ENABLE_LOG)
 
@@ -44,12 +41,6 @@ ifeq ($(UNAME_S),Darwin)
 	# On macOS, use libtool to produce a static archive compatible with ld64
 	MAKE_STATIC_LIB = libtool -static -o
 	NEED_RANLIB     = 0
-	INTERPOSE_SRC := $(SRC_DIR)/interpose.c
-	INTERPOSE_DYLIB := $(BLD_DIR)/libmalloc_interpose.dylib
-	TEST_DEFS += $(INTERPOSE)
-	ifneq ($(VERBOSE),)
-		TEST_DEFS += $(INTERPOSE_LOG)
-	endif
 else
 	AR ?= ar 
 	MAKE_STATIC_LIB = $(AR) $(ARFLAGS)
@@ -95,26 +86,6 @@ $(TST_DIR)/%: $(TST_DIR)/%.o $(LIB)
 test: all
 	@for t in $(TESTS); do echo "==> $$t"; "$$t" || exit 1; done
 	@echo "All tests passed."
-
-# ---- interposing ----
-ifeq ($(UNAME_S),Darwin)
-.PHONY: test-interpose
-
-$(INTERPOSE_DYLIB): $(INTERPOSE_SRC) | $(BLD_DIR)
- # the real targets that interposition calls are implemented by malloc.c
- # and we want interposing dylib to be able find it in runtime thus the 
- # -undefined dynamic_lookup  
-	$(CC) -dynamiclib $(INCLUDE_INTERNAL) -undefined dynamic_lookup $(TESTING) $(VERBOSE) $(INTERPOSE) -o $@ $< src/non_allocating_print.c
-
-# Run all tests with our interpose dylib hooking malloc via DYLD_INSERT_LIBRARIES
-test-interpose: all $(INTERPOSE_DYLIB)
-	@for t in $(TESTS); do \
-	  echo "==> $$t (interposed)"; \
-	  DYLD_INSERT_LIBRARIES=$(INTERPOSE_DYLIB) "$$t" || exit 1; \
-	done; \
-	echo "All interposed tests passed."
-endif
-# ---- interposing ----
 
 # --- directory creators ---
 dirs: | $(BLD_DIR) $(OBJ_DIR) $(TST_DIR)
