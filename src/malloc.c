@@ -83,7 +83,7 @@ block extend_heap(block* last, size_t aligned_size){
         perror("failed to allocate memory");
         return NULL;
     }
-    MM_ASSERT((void*) brk < requested);
+    MM_ASSERT((void*) brk == requested);
     brk->size = aligned_size;
     brk->next = NULL;
     brk->prev= NULL;

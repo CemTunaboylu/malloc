@@ -28,9 +28,9 @@
         if (new_brk < 0 || new_brk > BUFFER_SIZE) {
             return (void*)(-1);
         }
-
+        unsigned char* old_brk = buf_start + current_brk; 
         current_brk = new_brk;
-        return buf_start + current_brk;
+        return (void*) old_brk;
     }
 
     static int is_addr_in_buffer(void* addr) {
