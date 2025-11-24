@@ -317,7 +317,7 @@ void* MALLOC(size_t size) {
     return (void*)allocated_memory(blk);
 } 
 
-void* realloc(void* p, size_t size){
+void* REALLOC(void* p, size_t size){
     MM_REALLOC_CALL();
     // if we don't have anywhere to realloc, it is effectively a malloc
     if (p == NULL) return MALLOC(size); 
