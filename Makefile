@@ -55,9 +55,14 @@ SRCS     := $(filter-out $(SRC_DIR)/interpose.c,$(wildcard $(SRC_DIR)/*.c))
 OBJS     := $(patsubst $(SRC_DIR)/%.c,$(OBJ_DIR)/%.o,$(SRCS))
 LIB      := $(BLD_DIR)/lib$(strip $(PROJECT)).a
 
-# All test .c files become executables of the same basename in build/tests
-TEST_SOURCES := $(filter-out $(TEST_DIR)/acutest.h,$(wildcard $(TEST_DIR)/*.c))
+TEST_SOURCES := $(filter-out $(TEST_DIR)/acutest.h $(TEST_DIR)/log.c,$(wildcard $(TEST_DIR)/*.c))
 TESTS    := $(patsubst $(TEST_DIR)/%.c,$(TST_DIR)/%,$(TEST_SOURCES))
+
+# Dedicated object for log.c, to be linked into all test executables
+LOG_OBJ := $(TST_DIR)/log.o
+
+$(LOG_OBJ): $(TEST_DIR)/log.c | $(TST_DIR)
+	$(CC) $(CFLAGS) -c $< -o $@
 
 .PHONY: all clean test dirs test-container investigation-container
 
@@ -79,9 +84,9 @@ endif
 $(TST_DIR)/%.o: $(TEST_DIR)/%.c | $(TST_DIR)
 	$(CC) $(CFLAGS) -c $< -o $@
 
-# Link test object with our library (library last is conventional)
-$(TST_DIR)/%: $(TST_DIR)/%.o $(LIB)
-	$(CC) $(CFLAGS) $< $(LIB) $(LDLIBS) -o $@
+# Link test object with our library and log object (library last is conventional)
+$(TST_DIR)/%: $(TST_DIR)/%.o $(LIB) $(LOG_OBJ)
+	$(CC) $(CFLAGS) $< $(LOG_OBJ) $(LIB) $(LDLIBS) -o $@
 
 test: all
 	@for t in $(TESTS); do echo "==> $$t"; "$$t" || exit 1; done
