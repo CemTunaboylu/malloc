@@ -9,7 +9,7 @@
 
     static FILE *global_test_log;
     static int global_test_log_fd;
-    static void free_resources(void){ fclose(global_test_log); }
+    static void free_resources(void){ if (global_test_log != NULL) fclose(global_test_log); }
 
     __attribute__((constructor))
     void init_global_test_log(void) {
