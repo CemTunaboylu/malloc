@@ -31,6 +31,25 @@ block reconstruct_from_user_memory(const void* p);
     int is_addr_valid_heap_addr(void *p);
     void fuse_fwd(block);
     void fuse_bwd(block*);
+    void allocated_bytes_update(int);
+
+    // non-allocating writes
+    extern void debug_write_ptr(const void*);
+    extern void debug_write_ptr_fd(int, const void *);
+    extern void debug_write_str(const char*);
+    extern void debug_write_str_fd(int, const char *);
+    extern void debug_write_u64(size_t);
+    extern void debug_write_u64_fd(int, size_t);
+    extern void logf_nonalloc(const char *, ...);
+    extern void print_list_into_test_file(void);
+
+    // testing probes
+    extern block _mm_block_header(void);
+    extern size_t _mm_bytes_obtained_from_os(void);
+    extern size_t _mm_free_blocks(void);   // current free blocks
+    extern size_t _mm_non_free_blocks(void);   // current non-free blocks
+    extern size_t _mm_total_blocks(void);   // current free blocks
+    extern void _mm_tear_down_allocator(void);
 #endif
 
 // test probes use head, thus we need to make it external

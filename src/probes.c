@@ -1,15 +1,8 @@
 #ifdef TESTING
-    #define _POSIX_C_SOURCE 200809L
-
     #include <internal.h>
     #include <malloc/malloc.h>
-    #include <stdio.h>
 
     extern block head;
-
-    extern void debug_write_str_fd(int fd, const char *s);
-    extern void debug_write_ptr_fd(int fd, const void *p);
-    extern void debug_write_u64_fd(int fd, size_t v);
 
     block _mm_block_header(void){
         return head;
@@ -45,17 +38,4 @@
             free(b);
         }
     }
-
-    void print_list_into_file(FILE* f) {
-        if (head == NULL) return;
-        int fd = fileno(f);
-        for (block b = head; b; b = b->next) {
-            debug_write_str_fd(fd, "[ size:"); 
-            debug_write_u64_fd(fd, b->size); 
-            debug_write_str_fd(fd, " - free:"); 
-            debug_write_u64_fd(fd, b->free); 
-            debug_write_str_fd(fd, "]\n");
-        } 
-    }
-
 #endif
