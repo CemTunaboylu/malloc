@@ -78,16 +78,17 @@ malloc/
 ├── include/
 │   └── malloc/malloc.h      ← exported API symbols
 ├── src/
-│   ├── malloc.c             ← main allocator
 │   ├── alignment.c          ← alignment helpers
 │   ├── internal.h           ← block structure + allocator internals
+│   ├── malloc.c             ← main allocator
 │   ├── mm_debug.*           ← debug counters (TESTING)
+│   ├── non_allocating_print.c
 │   ├── probes.c             ← test inspection helpers
 │   └── sys_call_wrappers.c  ← brk/sbrk/mmap wrappers
 ├── tests/
 │  ├── acutest.h
+│  ├── log.c                 ← logging mechanisms for testing 
 │  ├── test_malloc.c
-│  └── probe.h
 └── githooks/                ← githooks (here for version control), `make install-git-hooks` to install them
     └── pre-push             ← pre-push hook, runs `test-interpose` if on mac + `make test-container` as guard before pushing
 ```
