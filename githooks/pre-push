@@ -18,11 +18,8 @@ else
   echo "No upstream tracking branch configured; running tests for safety..."
 fi
 
-# Only run interpose tests on macOS, since they're Darwin-only
-if [ "$(uname -s)" = "Darwin" ]; then
-  echo "==> Running interposed tests (make clean test-interpose)..."
-  make clean test-interpose
-fi
+echo "==> Running local tests (make clean test)..."
+make clean test
 
 echo "==> Running Linux container tests (make clean test-container)..."
 make clean test-container

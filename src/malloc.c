@@ -13,35 +13,45 @@
     - but after preprocessing, these become the real exported malloc/calloc/etc.
     This lets us override the libc allocator cleanly in one translation unit.
 */
-#define CALLOC calloc
-#define FREE free
-#define MALLOC malloc   
-#define REALLOC realloc   
+
+#ifdef TESTING 
+    #define CALLOC mm_calloc
+    #define FREE mm_free
+    #define MALLOC mm_malloc
+    #define REALLOC mm_realloc
+#else 
+    #define CALLOC calloc
+    #define FREE free
+    #define MALLOC malloc   
+    #define REALLOC realloc   
+#endif
 
 #define CURRENT_BRK mm_sbrk(0)
 
 #define MIN_SPLIT_REMAINING_PAYLOAD (MAX_ALIGNMENT)
 
-static size_t SIZE_OF_BLOCK;
+size_t SIZE_OF_BLOCK;
 
-size_t size_of_block(void) {
-    if (SIZE_OF_BLOCK == 0) {
-        SIZE_OF_BLOCK = align(sizeof(struct s_block));
-    }
-    return SIZE_OF_BLOCK;
+__attribute__((constructor))
+void init_aligned_size_of_block(void) {
+    SIZE_OF_BLOCK = align(sizeof(struct s_block));
 }
-
-#ifdef ENABLE_LOG
-    extern void debug_write_str(const char *s);
-    extern void debug_write_ptr(const void *p);
-    extern void debug_write_u64(size_t v);
-#endif
 
 block head = NULL; 
 static size_t allocated_bytes;
 
+void allocated_bytes_update(int update) {
+    if (update >= 0) {
+        allocated_bytes += update;
+    } else {
+        size_t decrement = (size_t)(-update);
+        MM_ASSERT(allocated_bytes >= decrement);
+        allocated_bytes -= decrement;
+    }
+}
+
 void* allocated_memory(block b) {
-    char* e = (char*)b + size_of_block();
+    char* e = (char*)b + SIZE_OF_BLOCK;
     return ((void*)e);
 }
 
@@ -67,7 +77,7 @@ void deep_copy_block(block src, block to) {
 
 block extend_heap(block* last, size_t aligned_size){
     block brk = CURRENT_BRK;
-    size_t total_bytes_to_allocate = size_of_block() + aligned_size;
+    size_t total_bytes_to_allocate = SIZE_OF_BLOCK + aligned_size;
     void* requested = mm_sbrk(total_bytes_to_allocate);
     if ( requested == (void*) -1) {
         perror("failed to allocate memory");
@@ -82,7 +92,7 @@ block extend_heap(block* last, size_t aligned_size){
         (*last)->next = (block)brk;
         brk->prev = *last;
     }
-    allocated_bytes += total_bytes_to_allocate;
+    allocated_bytes_update(total_bytes_to_allocate);
     return brk;
 }
 
@@ -106,7 +116,7 @@ int fuse_next(block b){
     if(!next->free) {
         return -1;
     }
-    b->size += size_of_block() + next->size;
+    b->size += SIZE_OF_BLOCK + next->size;
     b->next = next->next;
     b->end_of_alloc_mem = end(b);
     if (next->next)
@@ -123,7 +133,7 @@ void fuse_fwd(block b){
     }
     block cursor = b;
     do {
-        b->size += size_of_block() + cursor->next->size;
+        b->size += SIZE_OF_BLOCK + cursor->next->size;
         cursor=cursor->next;
         MM_FUSE_FWD_CALL();
     } while( cursor->next && cursor->next->free );
@@ -144,7 +154,7 @@ void fuse_bwd(block* b){
     block next = (*b)->next;
     while (cursor->prev && cursor->prev->free) {
         block prev = cursor->prev;
-        prev->size += size_of_block() + cursor->size;
+        prev->size += SIZE_OF_BLOCK + cursor->size;
         cursor = prev;
         MM_FUSE_BWD_CALL();
     }
@@ -171,13 +181,13 @@ int is_next_fusable(block b) {
 
 int is_splittable(block blk, size_t aligned_size) {
     size_t remaining_size = blk->size - aligned_size;
-    size_t min_splittable_total_block_size = size_of_block() + MIN_SPLIT_REMAINING_PAYLOAD;
+    size_t min_splittable_total_block_size = SIZE_OF_BLOCK + MIN_SPLIT_REMAINING_PAYLOAD;
     return (remaining_size > min_splittable_total_block_size); 
 }
 
 void split_block(block b, size_t aligned_size_to_shrink){
     block rem_free = (block)((char*)allocated_memory(b) + aligned_size_to_shrink);
-    rem_free->size =  b->size - aligned_size_to_shrink - size_of_block();
+    rem_free->size =  b->size - aligned_size_to_shrink - SIZE_OF_BLOCK;
     rem_free->next = b->next;
     rem_free->prev= b;
     if (b->next) {
@@ -191,7 +201,7 @@ void split_block(block b, size_t aligned_size_to_shrink){
 }
 
 block reconstruct_from_user_memory(const void* p) {
-    char* b = (char*)p - size_of_block(); 
+    char* b = (char*)p - SIZE_OF_BLOCK; 
     return ((block)b);
 }
 
@@ -227,6 +237,18 @@ void FREE(void* p) {
     }
     block blk = reconstruct_from_user_memory((const void*)p);
 
+    // guard for double free
+    if (blk->free == 1) {
+        #ifdef TESTING 
+            MM_ASSERT(0);
+        #else
+            debug_write_str("double free: ");
+            debug_write_ptr(p);
+            debug_write_str("\n");
+        #endif
+        return;
+    }
+
     blk->free = 1;
     MM_FREED();
 
@@ -237,49 +259,26 @@ void FREE(void* p) {
     int is_at_head = (!blk->prev);
 
     if (is_at_tail) {
+        size_t back = SIZE_OF_BLOCK + blk->size; 
+        void* old_tail = CURRENT_BRK;
+        if (mm_sbrk(-back) == (void*) -1) {
+            perror("error while releasing the tail");
+            return; 
+        }
 
-#ifdef ENABLE_MM_SBRK
-    size_t back = size_of_block() + blk->size; 
-    void* old_tail = CURRENT_BRK;
-    MM_ASSERT(allocated_bytes >= back);
-    if (mm_sbrk(-back) == (void*) -1) {
-        perror("error while releasing the tail");
-        return; 
-    }
-
-    // iff we truly release some pages, then we can project the change
-    if ((char*) old_tail > (char*) CURRENT_BRK) {
+        // iff we truly release some pages, then we can project the change
+        MM_ASSERT((char*) old_tail > (char*) CURRENT_BRK); 
         MM_RELEASED();
-        allocated_bytes -= back;
+        MM_ASSERT(allocated_bytes >= back);
+        allocated_bytes_update(-back);
         if (!is_at_head)
             blk->prev->next = NULL;
         else  
             head = NULL;
     }
-    #ifdef SHOW_SBRK_RELEASE_FAIL
-        MM_ASSERT((char*) old_tail == (char*) CURRENT_BRK); 
-    #elif defined(SHOW_SBRK_RELEASE_SUCCEEDS)
-        MM_ASSERT((char*) old_tail > (char*) CURRENT_BRK); 
-    #endif
-
-#elif defined(ENABLE_MM_BRK)
-    if (mm_brk(blk) == -1) {
-        perror("error while releasing the tail");
-        return;
-    }
-#endif
-    }
 }
 
 void* MALLOC(size_t size) {
-#ifdef TRACK_RET_ADDR
-    void* ret_addr = MM_RET_ADDR();
-    #ifdef ENABLE_LOG
-        debug_write_str("[mm_malloc] size=");
-        debug_write_u64(size);
-        debug_write_str("\n");
-    #endif
-#endif
     MM_MALLOC_CALL();
     if (size == 0) return NULL; 
 
@@ -303,21 +302,13 @@ void* MALLOC(size_t size) {
     }
 
     blk->free = 0;
-#ifdef TRACK_RET_ADDR
-    if (mm_callsite_count < 1024) {
-            mm_callsites[mm_callsite_count].blk = blk;
-            mm_callsites[mm_callsite_count].ret_addr = ret_addr;
-            mm_callsite_count++;
-        }
-#endif
-
     if (is_splittable(blk, aligned_size)) {
         split_block(blk, aligned_size);
     }
     return (void*)allocated_memory(blk);
 } 
 
-void* realloc(void* p, size_t size){
+void* REALLOC(void* p, size_t size){
     MM_REALLOC_CALL();
     // if we don't have anywhere to realloc, it is effectively a malloc
     if (p == NULL) return MALLOC(size); 
@@ -357,21 +348,3 @@ void* realloc(void* p, size_t size){
 
     return p;
 }
-
-#ifdef INTERPOSE
-    void  interposing_free(void* p) { FREE(p);}
-    void* interposing_calloc(size_t len, size_t size_of) { return CALLOC(len, size_of);}
-    void* interposing_malloc(size_t size) { return MALLOC(size);}
-    void* interposing_realloc(void* p, size_t size){ return REALLOC(p, size);}
-
-    size_t interposing_malloc_size(const void* p) {
-        if (!is_addr_valid_heap_addr((void*)p)) {
-            // Not from our heap; we *could* return 0,
-            // but that will still trip ObjC’s “corrupt” check.
-            // For now, say 0 and see how far we get.
-            return 0;
-        }
-        block blk = reconstruct_from_user_memory(p);
-        return blk->size;
-    }
-#endif
