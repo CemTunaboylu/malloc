@@ -13,10 +13,18 @@
     - but after preprocessing, these become the real exported malloc/calloc/etc.
     This lets us override the libc allocator cleanly in one translation unit.
 */
-#define CALLOC calloc
-#define FREE free
-#define MALLOC malloc   
-#define REALLOC realloc   
+
+#ifdef TESTING 
+    #define CALLOC mm_calloc
+    #define FREE mm_free
+    #define MALLOC mm_malloc
+    #define REALLOC mm_realloc
+#else 
+    #define CALLOC calloc
+    #define FREE free
+    #define MALLOC malloc   
+    #define REALLOC realloc   
+#endif
 
 #define CURRENT_BRK mm_sbrk(0)
 
