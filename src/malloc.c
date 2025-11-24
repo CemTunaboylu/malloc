@@ -227,6 +227,11 @@ void FREE(void* p) {
     }
     block blk = reconstruct_from_user_memory((const void*)p);
 
+    // handle double free
+    if (blk->free) {
+        return;
+    }
+
     blk->free = 1;
     MM_FREED();
 

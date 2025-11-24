@@ -294,14 +294,13 @@ static void test_forward_fusion_2_blocks(void) {
     TEST_CHECK_(blk->size == expected_size,
         "size must be %lu, got %lu", expected_size, blk->size);
 
-    ensuring_free(p);
     ensuring_free(ptrs[num_blocks-1]);
 }
 
 static void test_backward_fusion_2_blocks(void) {
     LOG("=== %s: start ===\n", __func__);
 
-    const size_t n = 2;
+    const size_t n = 3;
     void* ptrs[n];
     size_t base_bytes = 10;
 
@@ -313,7 +312,7 @@ static void test_backward_fusion_2_blocks(void) {
 
     LOG("\tpost-malloc ===\n");
 
-    for(size_t i=0; i<n; i++) {
+    for(size_t i=0; i<n-1; i++) {
         void *p = ptrs[i];
         block blk = reconstruct_from_user_memory(p);
         blk->free = 1;
@@ -331,13 +330,11 @@ static void test_backward_fusion_2_blocks(void) {
     LOG("\t post-bwd-fusion ===\n");
 
     size_t aligned_base_bytes = align(base_bytes);
-    size_t expected_size = (aligned_base_bytes * n + size_of_block());
+    size_t expected_size = (aligned_base_bytes * (n-1) + size_of_block());
     TEST_CHECK_(blk->size == expected_size,
         "size must be %lu, got %lu", expected_size, blk->size);
-    TEST_CHECK_(blk->next == NULL,
-        "tail shoud have been merged into head, but head->next: %p", (void*)blk->next);
 
-    p = ptrs[0];
+    p = ptrs[n-1];
     ensuring_free(p);
 }
 
@@ -358,7 +355,8 @@ static void test_free_no_release_or_fusion(void) {
 
     LOG("\tpost-malloc ===\n");
 
-    void* p = ptrs[1];
+    const size_t to_test = 1;
+    void* p = ptrs[to_test];
 
     ensuring_free(p);
     MM_ASSERT_FUSE_FWD_CALLED(0);
@@ -371,6 +369,7 @@ static void test_free_no_release_or_fusion(void) {
     TEST_CHECK(blk->free);
 
     for(size_t i=0; i<n; i++) {
+        if (i == to_test) continue;
         ensuring_free(ptrs[i]);
     }
 }
@@ -390,8 +389,11 @@ static void test_free_with_fusion_no_release(void) {
 
     LOG("\tpost-malloc ===\n");
 
+    const size_t to_test = n/2;
+
     // leave the last block unfree to avoid release
     for(size_t i=0; i<n-1; i++) {
+        if (to_test == i) continue;
         void *p = ptrs[i];
         block blk = reconstruct_from_user_memory(p);
         blk->free = 1;
@@ -399,7 +401,7 @@ static void test_free_with_fusion_no_release(void) {
 
     LOG("\tafter artificially freeing blocks ===\n");
 
-    void* p = ptrs[n/2];
+    void* p = ptrs[to_test];
     block blk = reconstruct_from_user_memory(p);
     block after_fusion_head = blk->prev->prev;
     ensuring_free(p);
