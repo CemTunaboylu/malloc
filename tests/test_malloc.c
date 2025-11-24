@@ -42,23 +42,40 @@
 
     static size_t base_total_blocks;
     static size_t base_free_blocks;
-    static void  *base_brk;
 
-    static void pre_test_sanity(void) {
-
+    static void reset_markers(void) {
         MM_RESET_MALLOC_CALL_MARKER();
         MM_RESET_FREE_CALL_MARKER();
         MM_RESET_FREED_MARKER();
         MM_RESET_CALLOC_CALL_MARKER();
         MM_RESET_FUSE_FWD_CALL_MARKER();
         MM_RESET_FUSE_BWD_CALL_MARKER();
+    }
+
+    static void pre_test_sanity(void) {
+        reset_markers();
 
         base_total_blocks = _mm_total_blocks();
         base_free_blocks  = _mm_free_blocks();
-        base_brk          = CURRENT_BRK;
+
+        TEST_CHECK(head == NULL);
+        TEST_CHECK(base_total_blocks == 0);
+        TEST_CHECK(base_free_blocks == 0);
     }
 
     static void post_test_sanity(void) {
+        // No new permanent blocks, anything allocated during the tests are new extended blocks,
+        // they will be released at the end of each test because they will be fused
+        TEST_CHECK(_mm_total_blocks() == base_total_blocks);
+        TEST_MSG("block leak: %zu -> %zu",
+            base_total_blocks, _mm_total_blocks());
+
+        // Free count should also match baseline
+        TEST_CHECK(_mm_free_blocks() == base_free_blocks);
+        TEST_MSG("free block mismatch: %zu -> %zu",
+            base_free_blocks, _mm_free_blocks());
+
+        TEST_CHECK(head == NULL);
     }
 
     static inline int is_aligned(void* p) {
@@ -181,6 +198,15 @@
         MM_ASSERT_FREED(0);
     }
 
+    static void test_first_malloc_new_head(void) {
+        TEST_CHECK(head == NULL);
+        void *p = ensuring_malloc(5);
+        TEST_CHECK(p != NULL);
+        TEST_CHECK(head != NULL);
+        ensuring_free(p);
+        TEST_CHECK(head == NULL);
+    }
+
     static void test_header_alignment_and_size(void) {
         size_t requested_bytes = 1;
         void *p = ensuring_malloc(requested_bytes);
@@ -252,7 +278,7 @@
     static void test_backward_fusion_2_blocks(void) {
         LOG("=== %s: start ===\n", __func__);
 
-        const size_t n = 2;
+        const size_t n = 3;
         void* ptrs[n];
         size_t base_bytes = 10;
 
@@ -264,7 +290,7 @@
 
         LOG("\tpost-malloc ===\n");
 
-        for(size_t i=0; i<n; i++) {
+        for(size_t i=0; i<n-1; i++) {
             void *p = ptrs[i];
             block blk = reconstruct_from_user_memory(p);
             blk->free = 1;
@@ -273,9 +299,9 @@
 
         LOG("\t after artificially freeing blocks ===\n");
 
-        void *p = ptrs[1];
+        void *p = ptrs[n-2];
         block blk = reconstruct_from_user_memory(p);
-
+        
         fuse_bwd(&blk);
         ensure_fuse_bwd_is_called(1);
         MM_ASSERT_FUSE_FWD_CALLED(0);
@@ -283,11 +309,12 @@
         LOG("\t post-bwd-fusion ===\n");
 
         size_t aligned_base_bytes = align(base_bytes);
-        size_t expected_size = (aligned_base_bytes * n + SIZE_OF_BLOCK);
+        size_t expected_size = (aligned_base_bytes * (n-1) + SIZE_OF_BLOCK);
         TEST_CHECK_(blk->size == expected_size,
             "size must be %lu, got %lu", expected_size, blk->size);
-        TEST_CHECK_(blk->next == NULL,
-            "tail shoud have been merged into head, but head->next: %p", (void*)blk->next);
+        
+        void* last = ptrs[n-1];
+        ensuring_free(last);
     }
 
     static void test_free_no_release_or_fusion(void) {
@@ -466,6 +493,7 @@
         { "test_invalid_addr_outside_after_for_is_valid_addr",                       test_invalid_addr_outside_after_for_is_valid_addr },
         { "test_valid_addr_for_is_valid_addr",                       test_valid_addr_for_is_valid_addr },
         { "test_malloc_zero",                       test_malloc_zero },
+        { "test_first_malloc_new_head",                       test_first_malloc_new_head },
         { "test_header_alignment_and_size",                  test_header_alignment_and_size },
         { "test_forward_fusion_2_blocks",              test_forward_fusion_2_blocks },
         { "test_backward_fusion_2_blocks",              test_backward_fusion_2_blocks },
