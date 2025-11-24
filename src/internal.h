@@ -19,6 +19,9 @@ struct s_block {
 void* allocated_memory(block b); 
 block reconstruct_from_user_memory(const void* p); 
 
+extern void debug_write_str(const char*);
+extern void debug_write_ptr(const void*);
+
 #ifdef TESTING
     extern size_t size_of_block(void);
     void deep_copy_block(block src, block to);
@@ -28,9 +31,7 @@ block reconstruct_from_user_memory(const void* p);
     void allocated_bytes_update(int);
 
     // non-allocating writes
-    extern void debug_write_ptr(const void*);
     extern void debug_write_ptr_fd(int, const void *);
-    extern void debug_write_str(const char*);
     extern void debug_write_str_fd(int, const char *);
     extern void debug_write_u64(size_t);
     extern void debug_write_u64_fd(int, size_t);

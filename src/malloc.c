@@ -239,6 +239,13 @@ void FREE(void* p) {
 
     // guard for double free
     if (blk->free == 1) {
+        #ifdef TESTING 
+            MM_ASSERT(0);
+        #else
+            debug_write_str("double free: ");
+            debug_write_ptr(p);
+            debug_write_str("\n");
+        #endif
         return;
     }
 
