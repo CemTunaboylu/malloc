@@ -5,32 +5,44 @@
 #include <stdint.h>
 
 #ifdef TESTING
+    #include <stddef.h>
     #define BUFFER_SIZE 65536
-    static char underlying_test_buffer[BUFFER_SIZE] = {0};
+
+    typedef union {
+        max_align_t _align;
+        unsigned char buf[BUFFER_SIZE];
+    } aligned_test_buffer_t;
+
+    static aligned_test_buffer_t underlying_test_buffer = {0};
     static intptr_t current_brk = 0;
-    static char* buf_start = &underlying_test_buffer[0];
-    static char* buf_end = &underlying_test_buffer[BUFFER_SIZE-1];
+    static unsigned char *const buf_start = underlying_test_buffer.buf;
+    static unsigned char *const buf_end   = underlying_test_buffer.buf + BUFFER_SIZE;
 
     void* mm_sbrk(intptr_t inc){
         if (inc == 0) {
-            return &underlying_test_buffer[current_brk];
+            return buf_start + current_brk;
         }
 
         intptr_t new_brk = current_brk + inc;
 
-        if ((new_brk >= BUFFER_SIZE) || (new_brk < 0)) return (void*)(-1);
+        if (new_brk < 0 || new_brk > BUFFER_SIZE) {
+            return (void*)(-1);
+        }
 
         current_brk = new_brk;
-        return &underlying_test_buffer[current_brk];
+        return buf_start + current_brk;
     }
 
     static int is_addr_in_buffer(void* addr) {
-        return ((buf_start > (char*) addr) || (buf_end < (char*) addr));
+        unsigned char *p = (unsigned char *)addr;
+        return (p >= buf_start) && (p <= buf_end);
     }
 
     int mm_brk(void* addr){
-        if (!is_addr_in_buffer(addr)) return -1;
-        current_brk = (char*) addr - &underlying_test_buffer[current_brk];
+        if (!is_addr_in_buffer(addr)) {
+            return -1;
+        }
+        current_brk = (unsigned char *)addr - buf_start;
         return 0;
     }
     void* mm_mmap(size_t n){ (void)n; return NULL; }
