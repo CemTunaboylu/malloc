@@ -8,7 +8,13 @@
 A small, test-driven, single-translation-unit implementation of `malloc`, `calloc`, `realloc`, and `free`.
 This project is intentionally simple, heavily instrumented, and designed as a learning tool for understanding heap allocators, block splitting/merging, alignment, and system call wrappers.
 
-The allocator overrides the global symbols (malloc, etc.) inside its own translation unit, enabling tests to exercise the implementation without using `LD_PRELOAD` tricks via statically linking.
+## Updates
+
+- We no longer override the global libc allocator symbols (malloc, etc.) inside its own translation unit. We replaced the testing mechanism with mock syscalls operating on a pre-allocated stack buffer for custom allocator calls. The previous version with function interposing and overriden global symbols resides in branch [first_find_free_list_with_deprecated_sbrk](https://github.com/CemTunaboylu/malloc/tree/first_find_free_list_with_deprecated_sbrk).
+
+📘 **Deep Dive: Linux vs macOS Dynamic Linking Behavior**
+
+👉 See the full investigation in the project wiki: The full process (ELF symbol resolution, Mach-O two-level namespaces, `PLT`/`GOT`, and `dyld` interposition and the allocator dynamics) with proofs reside in **[Dynamic Linking Deep Dive](../../wiki/Dynamic_Linking_Deep_Dive)**
 
 ## Features
 
@@ -60,13 +66,6 @@ These are fully stubbed for testing and demonstrate differences between glibc an
 ✔ Deterministic, single-process Acutest suite
 
 Tests don’t fork; everything runs inside one process for determinism.
-
-📘 **Deep Dive: Linux vs macOS Dynamic Linking Behavior**
-
-Curious how ELF symbol resolution, Mach-O two-level namespaces, `PLT`/`GOT`, and `dyld` interposition affect this allocator?
-
-👉 See the full investigation in the project wiki:  
-**[Dynamic Linking Deep Dive](../../wiki/Dynamic_Linking_Deep_Dive)**
 
 ## Project Layout
 
