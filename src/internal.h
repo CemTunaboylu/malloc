@@ -6,7 +6,6 @@
 // since blocks are always used with pointers, we define the type as a pointer type
 typedef struct s_block *block;
 
-// structs ara aligned by default, so cannot make free smaller at this point
 struct s_block {
     size_t size;
     block next;
@@ -16,11 +15,6 @@ struct s_block {
     // for reconstructing the block from given pointer
     void* end_of_alloc_mem; 
 }; 
-/* Note: We assume sizeof(struct s_block) is a multiple of MAX_ALIGNMENT so that
-    start_of_alloc_mem is suitably aligned for any fundamental type.
-    This is tested in test_malloc in case it is missed later on. 
-*/ 
-
 
 void* allocated_memory(block b); 
 block reconstruct_from_user_memory(const void* p); 
