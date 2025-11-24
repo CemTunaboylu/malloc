@@ -10,7 +10,10 @@ This project is intentionally simple, heavily instrumented, and designed as a le
 
 ## Updates
 
-- We no longer override the global libc allocator symbols (malloc, etc.) inside its own translation unit. We replaced the testing mechanism with mock syscalls operating on a pre-allocated stack buffer for custom allocator calls. The previous version with function interposing and overriden global symbols resides in branch [first_find_free_list_with_deprecated_sbrk](https://github.com/CemTunaboylu/malloc/tree/first_find_free_list_with_deprecated_sbrk).
+- We no longer override the global libc allocator symbols (malloc, etc.) inside its own translation unit. We replaced the testing mechanism with mock syscalls operating on a pre-allocated stack buffer for custom allocator calls. The previous version with function interposing and overriden global symbols resides in branch [first_find_free_list_with_deprecated_sbrk](../../tree/first_find_free_list_with_deprecated_sbrk).
+
+- Latest branch with [mocked syscals and deprecated `brk` APIs](../../tree/sys_call_mocks)
+
 
 📘 **Deep Dive: Linux vs macOS Dynamic Linking Behavior**
 
