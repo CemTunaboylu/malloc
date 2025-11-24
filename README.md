@@ -154,22 +154,6 @@ The block header is intentionally aligned and verified in tests.
 
 **Note**: Modern kernels rarely shrink the program break — the test suite accounts for this.
 
-## Interposition Mode (macOS)
-
-On macOS, the project can be built in interposition mode, where a dylib transparently intercepts calls to:
-
-- `malloc`
-- `free`
-- `calloc`
-- `realloc`
-- `malloc_size`
-
-This allows testing application-level behavior by routing all calls to our allocators.
-
-We use a `DYLD_INSERT_LIBRARIES=...` mechanism and a dedicated interposer defined in `src/interpose.c`.
-
-Note: Interposed tests are intentionally limited: tests that rely on precise block layout control (fusion, exact counter assertions, etc.) are disabled under interposition because system libraries consistently allocate between test steps.
-
 ## Testing
 
 Tests live in `tests/test_malloc.c` and cover:
@@ -181,10 +165,9 @@ Tests live in `tests/test_malloc.c` and cover:
 - calloc zeroing
 - realloc grow/shrink semantics
 - data copy correctness
-- releasing memory (on container)
-- interposition of `calloc`, `free`, `malloc`, `realloc` on MacOS
+- releasing memory
 
-All tests enforce strict debug counters in TESTING mode.
+All tests enforce strict debug counters in TESTING mode. Currently, during testing, system calls are mocked and operate on a pre-allocated stack buffer. Only custom allocator calls are tested since we no longer override libc allocators. Anything else including acutest use libc implementations effectively isolating our test cases. This way, we also are OS-agnostic (eliminating release problems) in our tests by mimicking the desired behaviour with mock system calls.
 
 ## Debugging & Investigation Tools
 
@@ -215,33 +198,6 @@ or disable GDB to explore the container:
 ```sh
 make investigation-container USE_GDB=
 ```
-
-## Limitations / Non-Goals
-
-### Notes on Determinism and Test Environment
-
-The tests (counters) rely on deterministic allocator behavior, which are unfortunately hard to satisfy consistently. In best effort, all tests try to measure the delta between initial conditions to test the given behavior.
-
-Some tests that require particularly deterministic allocator behavior are:
-
-a. fusion of free blocks
-b. release of free tail block
-
-If a slipping allocation takes place, the test will fail:
-
-a. contiguity of free blocks are interrupted, thus fusion behaviour changes
-b. the block to be released may no longer be the tail, and won't be released (cannot be)
-
-In our tests:
-
-- Linux test binaries override malloc globally, causing system libraries to use the allocator as well. This is achieved by function interposition on Mac, by intercepting all calls within the process to libc implementations and injecting our implementations.
-- This results in additional allocations during process startup or stdio initialization.
-- Tests relying on precise counter equality or block list shape may fail under:
-  - interposition mode
-  - unforeseen glibc allocations
-  - sanitizer runtimes
-
-The test suite is structured so these tests are excluded when running under interposition (fusion to be specific). Other tests try to isolate call counters to specific callsites, and assert deltas rather than absolute values.
 
 ## Design Guarantees
 
