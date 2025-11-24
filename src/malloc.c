@@ -92,7 +92,7 @@ block extend_heap(block* last, size_t aligned_size){
         (*last)->next = (block)brk;
         brk->prev = *last;
     }
-    allocated_bytes += total_bytes_to_allocate;
+    allocated_bytes_update(total_bytes_to_allocate);
     return brk;
 }
 
