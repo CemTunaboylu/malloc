@@ -30,13 +30,11 @@
 
 #define MIN_SPLIT_REMAINING_PAYLOAD (MAX_ALIGNMENT)
 
-static size_t SIZE_OF_BLOCK;
+size_t SIZE_OF_BLOCK;
 
-size_t size_of_block(void) {
-    if (SIZE_OF_BLOCK == 0) {
-        SIZE_OF_BLOCK = align(sizeof(struct s_block));
-    }
-    return SIZE_OF_BLOCK;
+__attribute__((constructor))
+void init_aligned_size_of_block(void) {
+    SIZE_OF_BLOCK = align(sizeof(struct s_block));
 }
 
 #ifdef ENABLE_LOG
@@ -59,7 +57,7 @@ void allocated_bytes_update(int update) {
 }
 
 void* allocated_memory(block b) {
-    char* e = (char*)b + size_of_block();
+    char* e = (char*)b + SIZE_OF_BLOCK;
     return ((void*)e);
 }
 
@@ -85,7 +83,7 @@ void deep_copy_block(block src, block to) {
 
 block extend_heap(block* last, size_t aligned_size){
     block brk = CURRENT_BRK;
-    size_t total_bytes_to_allocate = size_of_block() + aligned_size;
+    size_t total_bytes_to_allocate = SIZE_OF_BLOCK + aligned_size;
     void* requested = mm_sbrk(total_bytes_to_allocate);
     if ( requested == (void*) -1) {
         perror("failed to allocate memory");
@@ -124,7 +122,7 @@ int fuse_next(block b){
     if(!next->free) {
         return -1;
     }
-    b->size += size_of_block() + next->size;
+    b->size += SIZE_OF_BLOCK + next->size;
     b->next = next->next;
     b->end_of_alloc_mem = end(b);
     if (next->next)
@@ -141,7 +139,7 @@ void fuse_fwd(block b){
     }
     block cursor = b;
     do {
-        b->size += size_of_block() + cursor->next->size;
+        b->size += SIZE_OF_BLOCK + cursor->next->size;
         cursor=cursor->next;
         MM_FUSE_FWD_CALL();
     } while( cursor->next && cursor->next->free );
@@ -162,7 +160,7 @@ void fuse_bwd(block* b){
     block next = (*b)->next;
     while (cursor->prev && cursor->prev->free) {
         block prev = cursor->prev;
-        prev->size += size_of_block() + cursor->size;
+        prev->size += SIZE_OF_BLOCK + cursor->size;
         cursor = prev;
         MM_FUSE_BWD_CALL();
     }
@@ -189,13 +187,13 @@ int is_next_fusable(block b) {
 
 int is_splittable(block blk, size_t aligned_size) {
     size_t remaining_size = blk->size - aligned_size;
-    size_t min_splittable_total_block_size = size_of_block() + MIN_SPLIT_REMAINING_PAYLOAD;
+    size_t min_splittable_total_block_size = SIZE_OF_BLOCK + MIN_SPLIT_REMAINING_PAYLOAD;
     return (remaining_size > min_splittable_total_block_size); 
 }
 
 void split_block(block b, size_t aligned_size_to_shrink){
     block rem_free = (block)((char*)allocated_memory(b) + aligned_size_to_shrink);
-    rem_free->size =  b->size - aligned_size_to_shrink - size_of_block();
+    rem_free->size =  b->size - aligned_size_to_shrink - SIZE_OF_BLOCK;
     rem_free->next = b->next;
     rem_free->prev= b;
     if (b->next) {
@@ -209,7 +207,7 @@ void split_block(block b, size_t aligned_size_to_shrink){
 }
 
 block reconstruct_from_user_memory(const void* p) {
-    char* b = (char*)p - size_of_block(); 
+    char* b = (char*)p - SIZE_OF_BLOCK; 
     return ((block)b);
 }
 
@@ -261,7 +259,7 @@ void FREE(void* p) {
 
     if (is_at_tail) {
 
-    size_t back = size_of_block() + blk->size; 
+    size_t back = SIZE_OF_BLOCK + blk->size; 
     void* old_tail = CURRENT_BRK;
     MM_ASSERT(allocated_bytes >= back);
     if (mm_sbrk(-back) == (void*) -1) {
