@@ -377,7 +377,7 @@
         void* p = ptrs[to_free];
         block blk = reconstruct_from_user_memory(p);
         block after_fusion_head = blk->prev->prev;
-        TEST_CHECK_(blk->free == 0, "block to free should have been free");
+        TEST_CHECK_(blk->free == 0, "block to free should not have been free");
         ensuring_free(p);
         ensure_fuse_fwd_is_called(1);
         ensure_fuse_bwd_is_called(2);
