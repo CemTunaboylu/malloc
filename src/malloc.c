@@ -41,12 +41,12 @@ block head = NULL;
 static size_t allocated_bytes;
 
 void allocated_bytes_update(int update) {
-    if (update > 0 )
+    if (update >= 0) {
         allocated_bytes += update;
-    else {
-        int updated = (int) allocated_bytes - update;
-        MM_ASSERT(updated>0);
-        allocated_bytes = (size_t) updated;
+    } else {
+        size_t decrement = (size_t)(-update);
+        MM_ASSERT(allocated_bytes >= decrement);
+        allocated_bytes -= decrement;
     }
 }
 
@@ -259,23 +259,22 @@ void FREE(void* p) {
     int is_at_head = (!blk->prev);
 
     if (is_at_tail) {
+        size_t back = SIZE_OF_BLOCK + blk->size; 
+        void* old_tail = CURRENT_BRK;
+        if (mm_sbrk(-back) == (void*) -1) {
+            perror("error while releasing the tail");
+            return; 
+        }
 
-    size_t back = SIZE_OF_BLOCK + blk->size; 
-    void* old_tail = CURRENT_BRK;
-    MM_ASSERT(allocated_bytes >= back);
-    if (mm_sbrk(-back) == (void*) -1) {
-        perror("error while releasing the tail");
-        return; 
-    }
-
-    // iff we truly release some pages, then we can project the change
-    MM_ASSERT((char*) old_tail > (char*) CURRENT_BRK); 
-    MM_RELEASED();
-    allocated_bytes_update(-back);
-    if (!is_at_head)
-        blk->prev->next = NULL;
-    else  
-        head = NULL;
+        // iff we truly release some pages, then we can project the change
+        MM_ASSERT((char*) old_tail > (char*) CURRENT_BRK); 
+        MM_RELEASED();
+        MM_ASSERT(allocated_bytes >= back);
+        allocated_bytes_update(-back);
+        if (!is_at_head)
+            blk->prev->next = NULL;
+        else  
+            head = NULL;
     }
 }
 

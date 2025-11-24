@@ -251,7 +251,6 @@
             void *p = ptrs[i];
             block blk = reconstruct_from_user_memory(p);
             blk->free = 1;
-            allocated_bytes_update(-blk->size);
         }
 
         LOG("\tafter artificially freeing blocks ===\n");
@@ -294,7 +293,6 @@
             void *p = ptrs[i];
             block blk = reconstruct_from_user_memory(p);
             blk->free = 1;
-            allocated_bytes_update(-blk->size);
         }
 
         LOG("\t after artificially freeing blocks ===\n");
@@ -372,7 +370,6 @@
             void *p = ptrs[i];
             block blk = reconstruct_from_user_memory(p);
             blk->free = 1;
-            allocated_bytes_update(-blk->size);
         }
 
         LOG("\tafter artificially freeing blocks ===\n");
