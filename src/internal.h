@@ -2,38 +2,25 @@
 
 #include <sys/types.h>
 #include <stdint.h>
+#include <block.h>
 
-// since blocks are always used with pointers, we define the type as a pointer type
-typedef struct s_block *block;
+typedef struct Arena *ArenaPtr;
 
-// since we are aligned, we can use the least-significant-bits to encode information
-#define __LSB_ENCODED
-
-struct s_block {
-    size_t __LSB_ENCODED size;
-    block next;
-    block prev;
-    int free;
-    // points to end of the allocated user memory to add another check 
-    // for reconstructing the block from given pointer
-    void* end_of_alloc_mem; 
-}; 
-
-void* allocated_memory(block b); 
-block reconstruct_from_user_memory(const void* p); 
-size_t get_real_size(block b);
-int is_mmapped(block b);
+struct Arena {
+    block top;
+    ArenaPtr next;
+    block head;
+    block tail;
+    size_t total_bytes_allocated;
+    size_t total_free_bytes;
+} Arena;
 
 extern void debug_write_str(const char*);
 extern void debug_write_ptr(const void*);
 
 #ifdef TESTING
-    extern size_t size_of_block(void);
-    void deep_copy_block(block src, block to);
-    int is_addr_valid_heap_addr(void *p);
-    void fuse_fwd(block);
-    void fuse_bwd(block*);
-    void allocated_bytes_update(int);
+    int is_addr_valid_heap_addr(ArenaPtr, void *);
+    void allocated_bytes_update(ArenaPtr, int);
 
     // non-allocating writes
     extern void debug_write_ptr_fd(int, const void *);
@@ -53,8 +40,10 @@ extern void debug_write_ptr(const void*);
 #endif
 
 // test probes use head, thus we need to make it external
-extern block head; 
+extern ArenaPtr a_head; 
 extern const size_t MAX_ALIGNMENT;
+
+#define MIN_SPLIT_REMAINING_PAYLOAD (MAX_ALIGNMENT)
 
 size_t align_up_fundamental(size_t);
 static inline size_t align(size_t s) {

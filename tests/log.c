@@ -39,6 +39,7 @@
     }
 
     void print_list_into_test_file(void) {
+        block head = a_head->head;
         if (head == NULL) return;
         for (block b = head; b; b = b->next) {
             debug_write_str_fd(global_test_log_fd, "[ size:"); 

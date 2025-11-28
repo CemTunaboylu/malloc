@@ -2,10 +2,10 @@
     #include <internal.h>
     #include <malloc/malloc.h>
 
-    extern block head;
+    extern ArenaPtr a_head;
 
     block _mm_block_header(void){
-        return head;
+        return a_head->head;
     }
 
     // Global counter for bytes obtained from the OS during TESTING builds.
@@ -23,7 +23,7 @@
     // Count blocks that satisfy a given predicate.
     size_t _mm_blocks(int (*predicate)(block)) {
         size_t c = 0;
-        for (block b = head; b; b = b->next) {
+        for (block b = a_head->head; b; b = b->next) {
             if (predicate(b)) c++;
         } 
         return c;
@@ -34,7 +34,7 @@
     size_t _mm_total_blocks(void)     { return _mm_blocks(pred_true); }
 
     void _mm_tear_down_allocator(void){
-        for(block b=head; b; b=b->next) {
+        for(block b=a_head->head; b; b=b->next) {
             free(b);
         }
     }

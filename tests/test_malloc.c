@@ -17,9 +17,10 @@
 
     #include "acutest.h"
     #include <internal.h>
+    #include <block.h>
     #include "mm_debug.h"
 
-    extern block head;
+    extern ArenaPtr a_head;
     extern size_t SIZE_OF_BLOCK;
 
     extern void* mm_calloc(size_t, size_t);
@@ -58,7 +59,7 @@
         base_total_blocks = _mm_total_blocks();
         base_free_blocks  = _mm_free_blocks();
 
-        TEST_CHECK(head == NULL);
+        TEST_CHECK(a_head->head == NULL);
         TEST_CHECK(base_total_blocks == 0);
         TEST_CHECK(base_free_blocks == 0);
     }
@@ -75,7 +76,7 @@
         TEST_MSG("free block mismatch: %zu -> %zu",
             base_free_blocks, _mm_free_blocks());
 
-        TEST_CHECK(head == NULL);
+        TEST_CHECK(a_head->head == NULL);
     }
 
     static inline int is_aligned(void* p) {
@@ -168,8 +169,9 @@
     static void test_invalid_addr_outside_before_for_is_valid_addr(void) {
         void *p = ensuring_malloc(1);
         TEST_CHECK(p != NULL);
+        block head = a_head->head;
         void *invalid = (char*)head + sizeof(struct s_block)*9;
-        TEST_CHECK_(is_addr_valid_heap_addr(invalid) == 0, 
+        TEST_CHECK_(is_addr_valid_heap_addr(a_head, invalid) == 0, 
             "address %p should have been invalid since it is before list head %p", invalid, (void*)head);
         ensuring_free(p);
     }
@@ -178,14 +180,14 @@
         void *p = ensuring_malloc(1);
         TEST_CHECK(p != NULL);
         void *invalid = (char*)p + sizeof(struct s_block);
-        TEST_CHECK(is_addr_valid_heap_addr(invalid) == 0);
+        TEST_CHECK(is_addr_valid_heap_addr(a_head, invalid) == 0);
         ensuring_free(p);
     }
 
     static void test_valid_addr_for_is_valid_addr(void) {
         void *p = ensuring_malloc(1);
         TEST_CHECK(p != NULL);
-        TEST_CHECK(is_addr_valid_heap_addr(p) == 1);
+        TEST_CHECK(is_addr_valid_heap_addr(a_head, p) == 1);
         ensuring_free(p);
     }
 
@@ -199,12 +201,12 @@
     }
 
     static void test_first_malloc_new_head(void) {
-        TEST_CHECK(head == NULL);
+        TEST_CHECK(a_head->head == NULL);
         void *p = ensuring_malloc(5);
         TEST_CHECK(p != NULL);
-        TEST_CHECK(head != NULL);
+        TEST_CHECK(a_head->head != NULL);
         ensuring_free(p);
-        TEST_CHECK(head == NULL);
+        TEST_CHECK(a_head->head == NULL);
     }
 
     static void test_header_alignment_and_size(void) {
