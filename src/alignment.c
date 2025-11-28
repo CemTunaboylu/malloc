@@ -22,9 +22,17 @@
 
     Other over-aligned types such as special SIMD types may require `aligned_alloc`.
 */
+
+const size_t MAX_ALIGNMENT = _Alignof(max_align_t); 
+static size_t NUM_BITS_SPARED_FROM_ALIGNMENT;
+
+__attribute__((constructor))
+void init_num_bits_spared_from_alignment(void) {
+    NUM_BITS_SPARED_FROM_ALIGNMENT = log2(MAX_ALIGNMENT);
+}
+
 static size_t align_up(size_t any, size_t to) { 
-    size_t shft = log2(to);
+    size_t shft = NUM_BITS_SPARED_FROM_ALIGNMENT;
     return (((any-1) >> shft)  << shft) + to;
 }
-const size_t MAX_ALIGNMENT = _Alignof(max_align_t); 
 size_t align_up_fundamental(size_t a) { return align_up(a, MAX_ALIGNMENT); }

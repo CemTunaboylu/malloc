@@ -40,6 +40,11 @@ void init_aligned_size_of_block(void) {
 block head = NULL; 
 static size_t allocated_bytes;
 
+/* ----- mmap support ----- */
+
+#define MMAPPED 0x1
+
+
 void allocated_bytes_update(int update) {
     if (update >= 0) {
         allocated_bytes += update;
@@ -172,6 +177,16 @@ int is_addr_valid_heap_addr(void* p) {
     block blk = reconstruct_from_user_memory(p);
     if (!do_ends_hold(blk)) return 0;
     return (p == (void*)allocated_memory(blk));
+}
+
+/* ----- LSB encoding ------ */ 
+
+size_t get_real_size(block b){
+    return (b->size & (~MMAPPED));
+}
+
+int is_mmapped(block b) {
+    return (b->size & MMAPPED) > 0;
 }
 
 int is_next_fusable(block b) {

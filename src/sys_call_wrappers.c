@@ -44,9 +44,13 @@
         current_brk = (unsigned char *)addr - buf_start;
         return 0;
     }
+    // there is a threshold for mmap, the chunk must be larger so that we can mimick it
     void* mm_mmap(size_t n){ (void)n; return NULL; }
     int   mm_munmap(void* p, size_t n){ (void)p; (void)n; return 0; }
 #else 
+
+    #include <sys/mman.h>
+
     #if defined(__clang__)
         #pragma clang diagnostic push 
         #pragma clang diagnostic ignored "-Wdeprecated-declarations" 
@@ -92,8 +96,14 @@
         return brk(addr);   // glibc: 0 on success, -1 on error 
     #endif
     }
-    void* mm_mmap(size_t n){ (void)n; return NULL; }
-    int   mm_munmap(void* p, size_t n){ (void)p; (void)n; return 0; }
+    
+    static const int READ_AND_WRITE = PROT_READ | PROT_WRITE;
+    static const int PRIVATE_AND_ANON = MAP_PRIVATE | MAP_ANONYMOUS;
+    #define DEVZERO -1
+    #define OFFSET 0
+    
+    void* mm_mmap(size_t n){ return mmap(0, n, READ_AND_WRITE, PRIVATE_AND_ANON, DEV_ZERO, OFFSET); }
+    int   mm_munmap(void* p, size_t n){ return munmap(p, n); }
 
     #if defined(__clang__)
         #pragma clang diagnostic pop

@@ -6,8 +6,11 @@
 // since blocks are always used with pointers, we define the type as a pointer type
 typedef struct s_block *block;
 
+// since we are aligned, we can use the least-significant-bits to encode information
+#define __LSB_ENCODED
+
 struct s_block {
-    size_t size;
+    size_t __LSB_ENCODED size;
     block next;
     block prev;
     int free;
@@ -18,6 +21,8 @@ struct s_block {
 
 void* allocated_memory(block b); 
 block reconstruct_from_user_memory(const void* p); 
+size_t get_real_size(block b);
+int is_mmapped(block b);
 
 extern void debug_write_str(const char*);
 extern void debug_write_ptr(const void*);
