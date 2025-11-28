@@ -1,7 +1,6 @@
 // Without _DEFAULT_SOURCE, brk and sbrk are NOT declared in <unistd.h> (for Linux/glibc)
 #define  _DEFAULT_SOURCE
 #include <sys/types.h>
-#include <unistd.h>
 #include <stdint.h>
 
 #ifdef TESTING
