@@ -56,8 +56,8 @@ void allocated_bytes_update(ArenaPtr ar_ptr, int update) {
      ar_ptr->total_bytes_allocated = allocated_bytes;
 }
 
-block extend_heap(ArenaPtr ar_ptr, size_t aligned_size){
-    block brk = CURRENT_BRK;
+BlockPtr extend_heap(ArenaPtr ar_ptr, size_t aligned_size){
+    BlockPtr brk = CURRENT_BRK;
     size_t total_bytes_to_allocate = SIZE_OF_BLOCK + aligned_size;
     void* requested = mm_sbrk(total_bytes_to_allocate);
     if ( requested == (void*) -1) {
@@ -71,7 +71,7 @@ block extend_heap(ArenaPtr ar_ptr, size_t aligned_size){
     brk->end_of_alloc_mem = end(brk); 
     // if I have last, append this block there
     if (ar_ptr->tail) {
-        ar_ptr->tail->next = (block)brk;
+        ar_ptr->tail->next = (BlockPtr)brk;
         brk->prev = ar_ptr->tail;
     }
     ar_ptr->tail= brk;
@@ -79,8 +79,8 @@ block extend_heap(ArenaPtr ar_ptr, size_t aligned_size){
     return brk;
 }
 
-block first_fit_find(ArenaPtr ar_ptr, size_t aligned_size){
-    block curr = ar_ptr->head;
+BlockPtr first_fit_find(ArenaPtr ar_ptr, size_t aligned_size){
+    BlockPtr curr = ar_ptr->head;
     // as long as we have block at hand, and it's either NOT free or NOT big enough
     while (curr && !(curr->free && curr->size >= aligned_size)) {
         curr = curr->next;
@@ -89,14 +89,14 @@ block first_fit_find(ArenaPtr ar_ptr, size_t aligned_size){
 }
 
 int is_addr_valid_heap_addr(ArenaPtr ar_ptr, void* p) {
-    block head = ar_ptr->head;
-    block tail = ar_ptr->tail;
+    BlockPtr head = ar_ptr->head;
+    BlockPtr tail = ar_ptr->tail;
     if (head == NULL) return 0;
 
     void* the_end_of_arena_tail = (char*)tail + (tail->size + SIZE_OF_BLOCK); 
     if ((void*) head > p || the_end_of_arena_tail < p) return 0;
 
-    block blk = reconstruct_from_user_memory(p);
+    BlockPtr blk = reconstruct_from_user_memory(p);
     if (!do_ends_hold(blk)) return 0;
     return (p == (void*)allocated_memory(blk));
 }
@@ -129,7 +129,7 @@ void FREE(void* p) {
     if (!is_addr_valid_heap_addr(a_head, p)) {
         return;
     }
-    block blk = reconstruct_from_user_memory((const void*)p);
+    BlockPtr blk = reconstruct_from_user_memory((const void*)p);
 
     // guard for double free
     if (blk->free == 1) {
@@ -156,7 +156,7 @@ void FREE(void* p) {
         size_t back = SIZE_OF_BLOCK + blk->size; 
         // TODO:  we must find delegate freeing to which ever arena this chunk is from
         void* old_tail = CURRENT_BRK;
-        block prev_of_tail = a_head->tail->prev;
+        BlockPtr prev_of_tail = a_head->tail->prev;
         if (mm_sbrk(-back) == (void*) -1) {
             perror("error while releasing the tail");
             return; 
@@ -179,9 +179,9 @@ void* MALLOC(size_t size) {
     MM_MALLOC_CALL();
     if (size == 0) return NULL; 
 
-    block head = a_head->head;
+    BlockPtr head = a_head->head;
     size_t aligned_size = align(size); 
-    block blk;
+    BlockPtr blk;
 
     if (head == NULL) {
         blk = extend_heap(a_head, aligned_size); 
@@ -221,7 +221,7 @@ void* REALLOC(void* p, size_t size){
     }
     if (!is_addr_valid_heap_addr(a_head, p)) return NULL;
 
-    block blk = reconstruct_from_user_memory((const void*)p);
+    BlockPtr blk = reconstruct_from_user_memory((const void*)p);
 
     // the block must be aligned
     size = align_up_fundamental(size);
@@ -236,8 +236,8 @@ void* REALLOC(void* p, size_t size){
     if (blk->size < size) {
         void* n = MALLOC(size);
         if (n == NULL) {return p;} // current policy: keep old ptr in case out-of-memory 
-        block blk_n = reconstruct_from_user_memory((const void*)n);
-        block blk_p = reconstruct_from_user_memory((const void*)p);
+        BlockPtr blk_n = reconstruct_from_user_memory((const void*)n);
+        BlockPtr blk_p = reconstruct_from_user_memory((const void*)p);
         deep_copy_block(blk_p, blk_n);
         FREE(p);
         return n;
