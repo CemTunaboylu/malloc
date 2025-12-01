@@ -8,7 +8,7 @@
 #include "internal.h"
 #include "mm_debug.h"
 
-#define MIN_SPLIT_REMAINING_PAYLOAD (MAX_ALIGNMENT)
+#define MIN_REQUIRED_SPLIT_SIZE (MAX_ALIGNMENT)
 
 size_t SIZE_OF_BLOCK;
 
@@ -148,7 +148,7 @@ int is_next_fusable(BlockPtr b) {
 int is_splittable(BlockPtr blk, size_t aligned_size) {
   size_t remaining_size = get_true_size(blk) - aligned_size;
   size_t min_splittable_total_block_size =
-      SIZE_OF_BLOCK + MIN_SPLIT_REMAINING_PAYLOAD;
+      SIZE_OF_BLOCK + MIN_REQUIRED_SPLIT_SIZE;
   return (remaining_size > min_splittable_total_block_size);
 }
 
