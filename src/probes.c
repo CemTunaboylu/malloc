@@ -15,8 +15,8 @@ size_t _mm_bytes_obtained_from_os(void) { return total_global_bytes_from_os; }
 typedef int (*block_predicate_t)(BlockPtr *b);
 
 // Example predicates used by tests.
-static int pred_is_free(BlockPtr b) { return b->free; }
-static int pred_is_used(BlockPtr b) { return !b->free; }
+static int pred_is_free(BlockPtr b) { return is_free(b); }
+static int pred_is_used(BlockPtr b) { return !is_free(b); }
 static int pred_true(BlockPtr b) {
   (void)b;
   return 1;

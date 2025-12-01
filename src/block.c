@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <sys/types.h>
 
+#include "block.h"
 #include "internal.h"
 #include "mm_debug.h"
 
@@ -15,9 +16,40 @@ __attribute__((constructor)) void init_aligned_size_of_block(void) {
   SIZE_OF_BLOCK = align(sizeof(struct SBlock));
 }
 
-/* ----- mmap support ----- */
+/* ----- LSB encoding ------ */
 
-#define MMAPPED 0x1
+static size_t LSB_ENCODABLE_CAP;
+
+__attribute__((constructor)) void init_lsb_encodable_cap(void) {
+  LSB_ENCODABLE_CAP = 1 << NUM_BITS_SPARED_FROM_ALIGNMENT;
+}
+
+size_t get_true_size(BlockPtr b) {
+  return (b->size & (~(LSB_ENCODABLE_CAP - 1)));
+}
+
+#define SET 1
+#define UNSET 0
+
+static void encode(BlockPtr b, enum LSB_Flag __LSB_ENCODABLE flag, int set) {
+  MM_ASSERT(flag < LSB_ENCODABLE_CAP);
+  if (set)
+    b->size |= (size_t)flag;
+  else
+    b->size &= (~(size_t)flag);
+}
+
+int is_mmapped(BlockPtr b) { return (b->size & (size_t)MMAPPED) > 0; }
+
+void mark_as_mmapped(BlockPtr b) { encode(b, MMAPPED, SET); }
+
+int is_free(BlockPtr b) { return (b->size & (size_t)FREE) > 0; }
+
+void mark_as_free(BlockPtr b) { encode(b, FREE, SET); }
+
+void mark_as_used(BlockPtr b) { encode(b, FREE, UNSET); }
+
+/* ----- mmap support ----- */
 
 void *allocated_memory(BlockPtr b) {
   char *e = (char *)b + SIZE_OF_BLOCK;
@@ -36,7 +68,10 @@ void deep_copy_block(BlockPtr src, BlockPtr to) {
   unsigned char *src_user_mem = (unsigned char *)allocated_memory(src);
   unsigned char *to_user_mem = (unsigned char *)allocated_memory(to);
 
-  size_t min = src->size < to->size ? src->size : to->size;
+  size_t src_size = get_true_size(src);
+  size_t to_size = get_true_size(to);
+
+  size_t min = src_size < to_size ? src_size : to_size;
   // hopefully the compiler will vectorize this loop, unroll it and use wider
   // loads/stores internally to optimize
   for (size_t i = 0; i < min; i++) {
@@ -51,10 +86,10 @@ int fuse_next(BlockPtr b) {
     return -1;
   }
   BlockPtr next = b->next;
-  if (!next->free) {
+  if (!is_free(next)) {
     return -1;
   }
-  b->size += SIZE_OF_BLOCK + next->size;
+  b->size += SIZE_OF_BLOCK + get_true_size(next);
   b->next = next->next;
   b->end_of_alloc_mem = end(b);
   if (next->next)
@@ -63,18 +98,18 @@ int fuse_next(BlockPtr b) {
 }
 
 void fuse_fwd(BlockPtr b) {
-  if (b->free == 0) {
+  if (!is_free(b)) {
     return;
   }
-  if (b->next == NULL || b->next->free == 0) {
+  if (b->next == NULL || !is_free(b->next)) {
     return;
   }
   BlockPtr cursor = b;
   do {
-    b->size += SIZE_OF_BLOCK + cursor->next->size;
+    b->size += SIZE_OF_BLOCK + get_true_size(cursor->next);
     cursor = cursor->next;
     MM_FUSE_FWD_CALL();
-  } while (cursor->next && cursor->next->free);
+  } while (cursor->next && is_free(cursor->next));
   b->next = cursor->next;
   b->end_of_alloc_mem = end(b);
   if (cursor->next)
@@ -82,7 +117,7 @@ void fuse_fwd(BlockPtr b) {
 }
 
 void fuse_bwd(BlockPtr *b) {
-  if ((*b)->free == 0) {
+  if (!is_free(*b)) {
     return;
   }
   if ((*b)->prev == NULL) {
@@ -90,9 +125,9 @@ void fuse_bwd(BlockPtr *b) {
   }
   BlockPtr cursor = *b;
   BlockPtr next = (*b)->next;
-  while (cursor->prev && cursor->prev->free) {
+  while (cursor->prev && is_free(cursor->prev)) {
     BlockPtr prev = cursor->prev;
-    prev->size += SIZE_OF_BLOCK + cursor->size;
+    prev->size += SIZE_OF_BLOCK + get_true_size(cursor);
     cursor = prev;
     MM_FUSE_BWD_CALL();
   }
@@ -105,19 +140,13 @@ void fuse_bwd(BlockPtr *b) {
 
 int is_next_fusable(BlockPtr b) {
   BlockPtr next = b->next;
-  return ((next != NULL) && (next->free == 1));
+  return ((next != NULL) && (is_free(next)));
 }
-
-/* ----- LSB encoding ------ */
-
-size_t get_real_size(BlockPtr b) { return (b->size & (~MMAPPED)); }
-
-int is_mmapped(BlockPtr b) { return (b->size & MMAPPED) > 0; }
 
 /* ----- splitting ------ */
 
 int is_splittable(BlockPtr blk, size_t aligned_size) {
-  size_t remaining_size = blk->size - aligned_size;
+  size_t remaining_size = get_true_size(blk) - aligned_size;
   size_t min_splittable_total_block_size =
       SIZE_OF_BLOCK + MIN_SPLIT_REMAINING_PAYLOAD;
   return (remaining_size > min_splittable_total_block_size);
@@ -126,16 +155,21 @@ int is_splittable(BlockPtr blk, size_t aligned_size) {
 void split_block(BlockPtr b, size_t aligned_size_to_shrink) {
   BlockPtr rem_free =
       (BlockPtr)((char *)allocated_memory(b) + aligned_size_to_shrink);
-  rem_free->size = b->size - aligned_size_to_shrink - SIZE_OF_BLOCK;
+  rem_free->size = get_true_size(b) - aligned_size_to_shrink - SIZE_OF_BLOCK;
   rem_free->next = b->next;
   rem_free->prev = b;
   if (b->next) {
     b->next->prev = rem_free;
   }
-  rem_free->free = 1;
+  mark_as_free(rem_free);
   rem_free->end_of_alloc_mem = end(rem_free);
+  // TODO: set the flags of b again, below we overwrite them
+  int mark_b_as_free = is_free(b);
   b->size = aligned_size_to_shrink;
   b->next = rem_free;
+  if (mark_b_as_free)
+    mark_as_free(b);
+
   b->end_of_alloc_mem = end(b);
 }
 

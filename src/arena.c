@@ -27,7 +27,8 @@ int is_addr_valid_heap_addr(ArenaPtr ar_ptr, void *p) {
   if (head == NULL)
     return 0;
 
-  void *the_end_of_arena_tail = (char *)tail + (tail->size + SIZE_OF_BLOCK);
+  void *the_end_of_arena_tail =
+      (char *)tail + (get_true_size(tail) + SIZE_OF_BLOCK);
   if ((void *)head > p || the_end_of_arena_tail < p)
     return 0;
 

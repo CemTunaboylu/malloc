@@ -29,6 +29,7 @@ extern void _mm_tear_down_allocator(void);
 // test probes use head, thus we need to make it external
 extern ArenaPtr a_head;
 extern const size_t MAX_ALIGNMENT;
+extern size_t NUM_BITS_SPARED_FROM_ALIGNMENT;
 
 #define MIN_SPLIT_REMAINING_PAYLOAD (MAX_ALIGNMENT)
 

@@ -94,7 +94,6 @@ void check_block_header_shape(BlockPtr head) {
   TEST_CHECK(sizeof(head->next) == 8);
   TEST_CHECK(sizeof(head->prev) == 8);
   TEST_CHECK(sizeof(head->end_of_alloc_mem) == 8);
-  TEST_CHECK(sizeof(head->free) == 4);
   TEST_CHECK(is_aligned(head));
 }
 
@@ -172,6 +171,47 @@ static void test_align(void) {
   TEST_CHECK((MAX_ALIGNMENT * 4) == align(large));
 }
 
+static void test_encode(void) {
+  size_t size = 3;
+  size_t aligned_size = align(size);
+  void *p = ensuring_malloc(size);
+  TEST_CHECK(p != NULL);
+
+  BlockPtr b = reconstruct_from_user_memory(p);
+  TEST_CHECK(!is_free(b));
+  TEST_CHECK(!is_mmapped(b));
+  TEST_CHECK_(get_true_size(b) == aligned_size, "%lu != %lu", get_true_size(b),
+              aligned_size);
+
+  mark_as_free(b);
+  TEST_CHECK(is_free(b));
+  TEST_CHECK(!is_mmapped(b));
+  TEST_CHECK_(get_true_size(b) == aligned_size, "%lu != %lu", get_true_size(b),
+              aligned_size);
+
+  mark_as_used(b);
+  TEST_CHECK(!is_free(b));
+  TEST_CHECK(!is_mmapped(b));
+  TEST_CHECK_(get_true_size(b) == aligned_size, "%lu != %lu", get_true_size(b),
+              aligned_size);
+
+  ensuring_free(p);
+}
+
+static void test_true_size(void) {
+  size_t size = 3;
+  size_t aligned_size = align(size);
+  void *p = ensuring_malloc(size);
+  TEST_CHECK(p != NULL);
+
+  BlockPtr b = reconstruct_from_user_memory(p);
+  TEST_CHECK(!is_free(b));
+  TEST_CHECK_(get_true_size(b) == aligned_size, "%lu != %lu", get_true_size(b),
+              aligned_size);
+
+  ensuring_free(p);
+}
+
 static void test_invalid_addr_outside_before_for_is_valid_addr(void) {
   void *p = ensuring_malloc(1);
   TEST_CHECK(p != NULL);
@@ -223,7 +263,7 @@ static void test_header_alignment_and_size(void) {
   TEST_CHECK(p != NULL);
 
   BlockPtr head = recons_blk_from_user_mem_ptr(p);
-  TEST_CHECK(head->size == align(requested_bytes));
+  TEST_CHECK(get_true_size(head) == align(requested_bytes));
   ensuring_free(p);
 }
 
@@ -261,7 +301,7 @@ static void test_forward_fusion_2_blocks(void) {
   for (size_t i = 0; i < num_blocks - 1; i++) {
     void *p = ptrs[i];
     BlockPtr blk = reconstruct_from_user_memory(p);
-    blk->free = 1;
+    mark_as_free(blk);
   }
 
   LOG("\tafter artificially freeing blocks ===\n");
@@ -277,11 +317,11 @@ static void test_forward_fusion_2_blocks(void) {
 
   size_t aligned_base_bytes = align(base_bytes);
   size_t expected_size = (aligned_base_bytes * 2 + SIZE_OF_BLOCK);
-  TEST_CHECK_(blk->size == expected_size, "size must be %lu, got %lu",
-              expected_size, blk->size);
+  TEST_CHECK_(get_true_size(blk) == expected_size, "size must be %lu, got %lu",
+              expected_size, get_true_size(blk));
 
   BlockPtr last = ptrs[num_blocks - 1];
-  TEST_CHECK_(last->free == 0, "last block should not have been freed");
+  TEST_CHECK_(!is_free(last), "last block should not have been freed");
   ensuring_free(last);
 }
 
@@ -303,7 +343,7 @@ static void test_backward_fusion_2_blocks(void) {
   for (size_t i = 0; i < n - 1; i++) {
     void *p = ptrs[i];
     BlockPtr blk = reconstruct_from_user_memory(p);
-    blk->free = 1;
+    mark_as_free(blk);
   }
 
   LOG("\t after artificially freeing blocks ===\n");
@@ -319,8 +359,8 @@ static void test_backward_fusion_2_blocks(void) {
 
   size_t aligned_base_bytes = align(base_bytes);
   size_t expected_size = (aligned_base_bytes * (n - 1) + SIZE_OF_BLOCK);
-  TEST_CHECK_(blk->size == expected_size, "size must be %lu, got %lu",
-              expected_size, blk->size);
+  TEST_CHECK_(get_true_size(blk) == expected_size, "size must be %lu, got %lu",
+              expected_size, get_true_size(blk));
 
   void *last = ptrs[n - 1];
   ensuring_free(last);
@@ -351,7 +391,7 @@ static void test_free_no_release_or_fusion(void) {
   LOG("\tpost-free ===\n");
 
   BlockPtr blk = recons_blk_from_user_mem_ptr(p);
-  TEST_CHECK(blk->free);
+  TEST_CHECK(is_free(blk));
 
   for (size_t i = 0; i < n; i++) {
     if (i == 1)
@@ -382,7 +422,7 @@ static void test_free_with_fusion_no_release(void) {
       continue;
     void *p = ptrs[i];
     BlockPtr blk = reconstruct_from_user_memory(p);
-    blk->free = 1;
+    mark_as_free(blk);
   }
 
   LOG("\tafter artificially freeing blocks ===\n");
@@ -390,7 +430,7 @@ static void test_free_with_fusion_no_release(void) {
   void *p = ptrs[to_free];
   BlockPtr blk = reconstruct_from_user_memory(p);
   BlockPtr after_fusion_head = blk->prev->prev;
-  TEST_CHECK_(blk->free == 0, "block to free should not have been free");
+  TEST_CHECK_(!is_free(blk), "block to free should not have been free");
   ensuring_free(p);
   ensure_fuse_fwd_is_called(1);
   ensure_fuse_bwd_is_called(2);
@@ -401,9 +441,9 @@ static void test_free_with_fusion_no_release(void) {
   size_t total_block_sizes = SIZE_OF_BLOCK * (n - 2);
   size_t total_allocated = align(base_bytes) * (n - 1);
   size_t total_bytes_after_fusion = total_allocated + total_block_sizes;
-  TEST_CHECK_(after_fusion_head->size == total_bytes_after_fusion,
+  TEST_CHECK_(get_true_size(after_fusion_head) == total_bytes_after_fusion,
               "size of after_fusion_head should add up to %lu, not %lu",
-              total_bytes_after_fusion, after_fusion_head->size);
+              total_bytes_after_fusion, get_true_size(after_fusion_head));
 
   void *last = ptrs[n - 1];
   ensuring_free(last);
@@ -503,6 +543,8 @@ static void test_realloc_with_size_zero(void) {
 
 TEST_LIST = {
     {"test_align", test_align},
+    {"test_true_size", test_true_size},
+    {"test_encode", test_encode},
     {"test_invalid_addr_outside_before_for_is_valid_addr",
      test_invalid_addr_outside_before_for_is_valid_addr},
     {"test_invalid_addr_outside_after_for_is_valid_addr",

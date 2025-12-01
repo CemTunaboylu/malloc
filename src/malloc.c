@@ -37,7 +37,7 @@ extern size_t SIZE_OF_BLOCK;
 /* ----- arena ----- */
 
 ArenaPtr a_head;
-static char head_buffer[sizeof(Arena)] = {0};
+static char head_buffer[sizeof(struct Arena)] = {0};
 
 __attribute__((constructor)) void init_arena_head(void) {
   a_head = (ArenaPtr)&head_buffer;
@@ -70,7 +70,7 @@ BlockPtr first_fit_find(ArenaPtr ar_ptr, size_t aligned_size) {
   BlockPtr curr = ar_ptr->head;
   // as long as we have block at hand, and it's either NOT free or NOT big
   // enough
-  while (curr && !(curr->free && curr->size >= aligned_size)) {
+  while (curr && !(is_free(curr) && get_true_size(curr) >= aligned_size)) {
     curr = curr->next;
   }
   return curr;
@@ -108,7 +108,7 @@ void FREE(void *p) {
   BlockPtr blk = reconstruct_from_user_memory((const void *)p);
 
   // guard for double free
-  if (blk->free == 1) {
+  if (is_free(blk)) {
 #ifdef TESTING
     MM_ASSERT(0);
 #else
@@ -119,7 +119,7 @@ void FREE(void *p) {
     return;
   }
 
-  blk->free = 1;
+  mark_as_free(blk);
   MM_FREED();
 
   fuse_fwd(blk);
@@ -129,7 +129,7 @@ void FREE(void *p) {
   int is_at_head = (!blk->prev);
 
   if (is_at_tail) {
-    size_t back = SIZE_OF_BLOCK + blk->size;
+    size_t back = SIZE_OF_BLOCK + get_true_size(blk);
     // TODO:  we must find delegate freeing to which ever arena this chunk is
     // from
     void *old_tail = CURRENT_BRK;
@@ -178,13 +178,13 @@ void *MALLOC(size_t size) {
     return NULL;
   }
 
-  blk->free = 0;
   if (is_splittable(blk, aligned_size)) {
     split_block(blk, aligned_size);
     if (a_head->tail == blk) {
       a_head->tail = blk->next;
     }
   }
+  mark_as_used(blk);
   return (void *)allocated_memory(blk);
 }
 
@@ -206,16 +206,16 @@ void *REALLOC(void *p, size_t size) {
   // the block must be aligned
   size = align_up_fundamental(size);
 
-  if (blk->size == size)
+  if (get_true_size(blk) == size)
     return p;
 
   // try to grow in-place
-  while (blk->size < size && is_next_fusable(blk)) {
+  while (get_true_size(blk) < size && is_next_fusable(blk)) {
     if (fuse_next(blk) == -1)
       break;
   }
   // could not grow in place enough, allocate new and copy, free old
-  if (blk->size < size) {
+  if (get_true_size(blk) < size) {
     void *n = MALLOC(size);
     if (n == NULL) {
       return p;

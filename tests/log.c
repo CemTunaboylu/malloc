@@ -38,17 +38,18 @@
         debug_write_str_fd(global_test_log_fd, buf);
     }
 
-    void print_list_into_test_file(void) {
-        BlockPtr head = a_head->head;
-        if (head == NULL) return;
-        for (BlockPtr b = head; b; b = b->next) {
-            debug_write_str_fd(global_test_log_fd, "[ size:"); 
-            debug_write_u64_fd(global_test_log_fd, b->size); 
-            debug_write_str_fd(global_test_log_fd, " - free:"); 
-            debug_write_u64_fd(global_test_log_fd, b->free); 
-            debug_write_str_fd(global_test_log_fd, "]\n");
-        } 
-    }
+void print_list_into_test_file(void) {
+  BlockPtr head = a_head->head;
+  if (head == NULL)
+    return;
+  for (BlockPtr b = head; b; b = b->next) {
+    debug_write_str_fd(global_test_log_fd, "[ size:");
+    debug_write_u64_fd(global_test_log_fd, get_true_size(b));
+    debug_write_str_fd(global_test_log_fd, " - free:");
+    debug_write_u64_fd(global_test_log_fd, is_free(b));
+    debug_write_str_fd(global_test_log_fd, "]\n");
+  }
+}
 
     #define LOG(...) do { logf_nonalloc(__VA_ARGS__); print_list_into_file(); } while (0)
 #else
