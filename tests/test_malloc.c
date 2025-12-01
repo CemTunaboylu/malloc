@@ -17,6 +17,7 @@ static void post_test_sanity(void);
 
 #include "acutest.h"
 #include "mm_debug.h"
+#include <arena.h>
 #include <block.h>
 #include <internal.h>
 
