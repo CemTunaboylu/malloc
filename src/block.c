@@ -19,14 +19,14 @@ __attribute__((constructor)) void init_aligned_size_of_block(void) {
 /* ----- LSB encoding ------ */
 
 static size_t LSB_ENCODABLE_CAP;
+static size_t LSB_ENCODABLE_MASK;
 
-__attribute__((constructor)) void init_lsb_encodable_cap(void) {
+__attribute__((constructor)) void init_lsb_encodable_cap_and_mask(void) {
   LSB_ENCODABLE_CAP = 1 << NUM_BITS_SPARED_FROM_ALIGNMENT;
+  LSB_ENCODABLE_MASK = ~(LSB_ENCODABLE_CAP - 1);
 }
 
-size_t get_true_size(BlockPtr b) {
-  return (b->size & (~(LSB_ENCODABLE_CAP - 1)));
-}
+size_t get_true_size(BlockPtr b) { return (b->size & LSB_ENCODABLE_MASK); }
 
 #define SET 1
 #define UNSET 0
