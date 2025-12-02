@@ -145,6 +145,7 @@ void ensure_fuse_bwd_is_called(int exp) {
 }
 
 void *ensuring_realloc(void *p, size_t size) {
+  MM_RESET_MALLOC_CALL_MARKER();
   MM_RESET_REALLOC_MARKER();
   void *r = REALLOC_UNDER_TESTING(p, size);
   MM_ASSERT_REALLOC_CALLED(1);
@@ -218,7 +219,7 @@ static void test_invalid_addr_outside_before_for_is_valid_addr(void) {
   BlockPtr head = a_head->head;
   void *invalid = (char *)head + sizeof(struct SBlock) * 9;
   TEST_CHECK_(
-      is_addr_valid_heap_addr(a_head, invalid) == 0,
+      get_block_from_main_arena(a_head, invalid) == NULL,
       "address %p should have been invalid since it is before list head %p",
       invalid, (void *)head);
   ensuring_free(p);
@@ -228,14 +229,14 @@ static void test_invalid_addr_outside_after_for_is_valid_addr(void) {
   void *p = ensuring_malloc(1);
   TEST_CHECK(p != NULL);
   void *invalid = (char *)p + sizeof(struct SBlock);
-  TEST_CHECK(is_addr_valid_heap_addr(a_head, invalid) == 0);
+  TEST_CHECK(get_block_from_main_arena(a_head, invalid) == NULL);
   ensuring_free(p);
 }
 
 static void test_valid_addr_for_is_valid_addr(void) {
   void *p = ensuring_malloc(1);
   TEST_CHECK(p != NULL);
-  TEST_CHECK(is_addr_valid_heap_addr(a_head, p) == 1);
+  TEST_CHECK(get_block_from_main_arena(a_head, p));
   ensuring_free(p);
 }
 
@@ -472,7 +473,7 @@ static void test_copy_block(void) {
   BlockPtr p_blk = reconstruct_from_user_memory(p);
   BlockPtr q_blk = reconstruct_from_user_memory(q);
 
-  deep_copy_block(p_blk, q_blk);
+  deep_copy_user_memory(p_blk, q_blk);
   LOG("\tafter deep copy block ===\n");
 
   size_t min = src_len > to_copy_len ? to_copy_len : src_len;
@@ -493,7 +494,6 @@ static void test_realloc_grow_and_shrink(void) {
   for (int i = 0; i < (int)n; i++)
     p[i] = (char)i;
 
-  MM_RESET_MALLOC_CALL_MARKER();
   LOG("\tpost-malloc with size %lu and setting values for data ===\n", n);
 
   const size_t re_grow_n = 100;
@@ -502,8 +502,8 @@ static void test_realloc_grow_and_shrink(void) {
   MM_ASSERT_MALLOC_CALLED(1);
   MM_RESET_MALLOC_CALL_MARKER();
   MM_ASSERT_FREE_CALLED(1);
-  MM_RESET_FREE_CALL_MARKER();
   ensure_freed();
+  MM_RESET_FREE_CALL_MARKER();
   TEST_ASSERT(q != NULL);
   for (int i = 0; i < (int)n; i++)
     TEST_CHECK(q[i] == (char)i);
@@ -520,7 +520,10 @@ static void test_realloc_grow_and_shrink(void) {
     TEST_CHECK(r[i] == (char)i);
 
   LOG("\tafter shrinking realloc with %lu ===\n", re_shrink_n);
+  // this should free the whole thing, since it will fuse bk and fw
   ensuring_free(r);
+  TEST_ASSERT(a_head->head == NULL);
+  TEST_ASSERT(a_head->tail == NULL);
 }
 
 static void test_realloc_with_size_zero(void) {
@@ -561,7 +564,7 @@ TEST_LIST = {
     {"test_free_no_release_or_fusion", test_free_no_release_or_fusion},
     {"test_free_with_fusion_no_release", test_free_with_fusion_no_release},
     {"test_copy_block", test_copy_block},
-    {"test_realloc_grow_shrink", test_realloc_grow_and_shrink},
+    {"test_realloc_grow_and_shrink", test_realloc_grow_and_shrink},
     {"test_realloc_with_size_zero", test_realloc_with_size_zero},
     {NULL, NULL}};
 #endif

@@ -19,14 +19,18 @@ __attribute__((constructor)) void init_aligned_size_of_block(void) {
 /* ----- LSB encoding ------ */
 
 static size_t LSB_ENCODABLE_CAP;
-static size_t LSB_ENCODABLE_MASK;
+static size_t LSB_ENCODABLE_ERASURE_MASK;
+static size_t LSB_ENCODABLE_ONLY_MASK;
 
-__attribute__((constructor)) void init_lsb_encodable_cap_and_mask(void) {
+__attribute__((constructor)) void init_lsb_encodable_cap_and_masks(void) {
   LSB_ENCODABLE_CAP = 1 << NUM_BITS_SPARED_FROM_ALIGNMENT;
-  LSB_ENCODABLE_MASK = ~(LSB_ENCODABLE_CAP - 1);
+  LSB_ENCODABLE_ERASURE_MASK = ~(LSB_ENCODABLE_CAP - 1);
+  LSB_ENCODABLE_ONLY_MASK = LSB_ENCODABLE_CAP - 1;
 }
 
-size_t get_true_size(BlockPtr b) { return (b->size & LSB_ENCODABLE_MASK); }
+size_t get_true_size(BlockPtr b) {
+  return (b->size & LSB_ENCODABLE_ERASURE_MASK);
+}
 
 #define SET 1
 #define UNSET 0
@@ -39,6 +43,10 @@ static void encode(BlockPtr b, enum LSB_Flag __LSB_ENCODABLE flag, int set) {
     b->size &= (~(size_t)flag);
 }
 
+size_t get_flags(BlockPtr b) { return (b->size & LSB_ENCODABLE_ONLY_MASK); }
+
+void set_flags(BlockPtr b, size_t flags) { encode(b, flags, SET); }
+
 int is_mmapped(BlockPtr b) { return (b->size & (size_t)MMAPPED) > 0; }
 
 void mark_as_mmapped(BlockPtr b) { encode(b, MMAPPED, SET); }
@@ -49,7 +57,10 @@ void mark_as_free(BlockPtr b) { encode(b, FREE, SET); }
 
 void mark_as_used(BlockPtr b) { encode(b, FREE, UNSET); }
 
-/* ----- mmap support ----- */
+void transfer_flags(BlockPtr from, BlockPtr to) {
+  size_t flags = get_flags(from);
+  set_flags(to, flags);
+}
 
 void *allocated_memory(BlockPtr b) {
   char *e = (char *)b + SIZE_OF_BLOCK;
@@ -57,12 +68,23 @@ void *allocated_memory(BlockPtr b) {
 }
 
 void *end(BlockPtr b) {
-  return (void *)((char *)allocated_memory(b) + b->size);
+  return (void *)((char *)allocated_memory(b) + get_true_size(b));
 }
 
 int do_ends_hold(BlockPtr b) { return (end(b) == b->end_of_alloc_mem); }
 
-void deep_copy_block(BlockPtr src, BlockPtr to) {
+// NOTE: Does not handle head/tail of arenas, those have to be handled within
+// the arena
+void switch_places_in_list(BlockPtr rem, BlockPtr put) {
+  put->next = rem->next;
+  put->prev = rem->prev;
+  if (put->prev)
+    put->prev->next = put;
+  if (put->next)
+    put->next->prev = put;
+}
+
+void deep_copy_user_memory(BlockPtr src, BlockPtr to) {
   // int* seems to be UB, to be safe and truly type agnostic, we treat it byte
   // by byte
   unsigned char *src_user_mem = (unsigned char *)allocated_memory(src);
@@ -153,6 +175,7 @@ int is_splittable(BlockPtr blk, size_t aligned_size) {
 }
 
 void split_block(BlockPtr b, size_t aligned_size_to_shrink) {
+  size_t bs_flags = get_flags(b);
   BlockPtr rem_free =
       (BlockPtr)((char *)allocated_memory(b) + aligned_size_to_shrink);
   rem_free->size = get_true_size(b) - aligned_size_to_shrink - SIZE_OF_BLOCK;
@@ -163,13 +186,9 @@ void split_block(BlockPtr b, size_t aligned_size_to_shrink) {
   }
   mark_as_free(rem_free);
   rem_free->end_of_alloc_mem = end(rem_free);
-  // TODO: set the flags of b again, below we overwrite them
-  int mark_b_as_free = is_free(b);
   b->size = aligned_size_to_shrink;
   b->next = rem_free;
-  if (mark_b_as_free)
-    mark_as_free(b);
-
+  set_flags(b, bs_flags);
   b->end_of_alloc_mem = end(b);
 }
 

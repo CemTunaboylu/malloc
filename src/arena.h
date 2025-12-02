@@ -5,18 +5,29 @@
 #include <sys/types.h>
 
 typedef struct Arena *ArenaPtr;
+typedef struct MMapArena *MMapArenaPtr;
 
+#define MIN_CAP_FOR_MMAP (131072) // 128 KiB
+
+// Note: thread-safety is not a concern at the moment,
+// thus we only have 2 arenas: sbrk arena and mmap arena.
 struct Arena {
-  BlockPtr top;
-  ArenaPtr next;
   BlockPtr head;
   BlockPtr tail;
   size_t total_bytes_allocated;
   size_t total_free_bytes;
-} Arena;
+};
 
-int is_addr_valid_heap_addr(ArenaPtr, void *);
-void allocated_bytes_update(ArenaPtr, int);
+struct MMapArena {
+  BlockPtr head;
+  BlockPtr tail;
+  size_t total_bytes_allocated;
+  size_t total_free_bytes;
+};
+
+BlockPtr get_block_from_main_arena(ArenaPtr, void *);
+BlockPtr get_block_from_mmapped_arena(MMapArenaPtr, void *);
+void allocated_bytes_update(size_t *, int);
 
 extern void debug_write_str(const char *);
 extern void debug_write_ptr(const void *);

@@ -32,6 +32,7 @@ extern const size_t MAX_ALIGNMENT;
 extern size_t NUM_BITS_SPARED_FROM_ALIGNMENT;
 
 #define MIN_SPLIT_REMAINING_PAYLOAD (MAX_ALIGNMENT)
+#define IS_FAILED_BY_PTR(p) ((p) == (void *)-1)
 
 size_t align_up_fundamental(size_t);
 static inline size_t align(size_t s) { return align_up_fundamental(s); }
