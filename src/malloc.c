@@ -104,8 +104,10 @@ BlockPtr extend_heap(size_t aligned_size, enum Allocation allocation) {
   void *requested;
   if (allocation == MMAP) {
     requested = mm_mmap(total_bytes_to_allocate);
+    MM_MARK(BY_MMAPPING);
   } else {
     requested = mm_sbrk(total_bytes_to_allocate);
+    MM_MARK(BY_SBRKING);
   }
   if (IS_FAILED_BY_PTR(requested)) {
     perror("failed to allocate memory");
@@ -195,11 +197,12 @@ void FREE(void *p) {
 
   size_t back = SIZE_OF_BLOCK + get_true_size(blk);
   // if it is mmapped, just munmap it
-  // TODO: add mmap marker
   if (is_mmapped(blk)) {
     MM_ASSERT(ma_head->total_bytes_allocated >= back);
     if (is_at_tail)
       ma_head->tail = blk->prev;
+    if (is_at_head)
+      ma_head->head = blk->next;
     if (blk->prev)
       blk->prev->next = blk->next;
     if (blk->next)

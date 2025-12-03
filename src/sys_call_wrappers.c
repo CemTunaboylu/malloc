@@ -5,8 +5,13 @@
 #include <sys/types.h>
 
 #ifdef TESTING
+#include <arena.h>
+#include <internal.h>
 #include <stddef.h>
-#define BUFFER_SIZE 65536
+
+#define SBRK_REGION_SIZE 65536
+#define MMAP_REGION_SIZE (MIN_CAP_FOR_MMAP * 8)
+#define BUFFER_SIZE (SBRK_REGION_SIZE + MMAP_REGION_SIZE)
 
 typedef union {
   max_align_t _align;
@@ -15,12 +20,34 @@ typedef union {
 
 static aligned_test_buffer_t underlying_test_buffer = {0};
 static intptr_t current_brk = 0;
-static unsigned char *const buf_start = underlying_test_buffer.buf;
-static unsigned char *const buf_end = underlying_test_buffer.buf + BUFFER_SIZE;
+static unsigned char *const buf_start_sbrk = underlying_test_buffer.buf;
+static unsigned char *const buf_end_sbrk =
+    underlying_test_buffer.buf + SBRK_REGION_SIZE;
+
+static int is_addr_in_sbrk_buffer(void *addr) {
+  unsigned char *p = (unsigned char *)addr;
+  return (p >= buf_start_sbrk) && (p <= buf_end_sbrk);
+}
+
+// will grow backwards
+static intptr_t mmap_brk;
+
+__attribute__((constructor)) void init_mmap_brk(void) {
+  mmap_brk = BUFFER_SIZE;
+}
+static unsigned char *const buf_start_mmap =
+    underlying_test_buffer.buf + SBRK_REGION_SIZE + 16;
+static unsigned char *const buf_end_mmap =
+    underlying_test_buffer.buf + BUFFER_SIZE;
+
+static int is_addr_in_mmap_buffer(void *addr) {
+  unsigned char *p = (unsigned char *)addr;
+  return (p >= buf_start_mmap) && (p <= buf_end_mmap);
+}
 
 void *mm_sbrk(intptr_t inc) {
   if (inc == 0) {
-    return buf_start + current_brk;
+    return buf_start_sbrk + current_brk;
   }
 
   intptr_t new_brk = current_brk + inc;
@@ -28,32 +55,39 @@ void *mm_sbrk(intptr_t inc) {
   if (new_brk < 0 || new_brk > BUFFER_SIZE) {
     return (void *)(-1);
   }
-  unsigned char *old_brk = buf_start + current_brk;
+  unsigned char *old_brk = buf_start_sbrk + current_brk;
   current_brk = new_brk;
   return (void *)old_brk;
 }
 
-static int is_addr_in_buffer(void *addr) {
-  unsigned char *p = (unsigned char *)addr;
-  return (p >= buf_start) && (p <= buf_end);
-}
-
 int mm_brk(void *addr) {
-  if (!is_addr_in_buffer(addr)) {
+  if (!is_addr_in_sbrk_buffer(addr)) {
     return -1;
   }
-  current_brk = (unsigned char *)addr - buf_start;
+  current_brk = (unsigned char *)addr - buf_start_sbrk;
   return 0;
 }
 // there is a threshold for mmap, the chunk must be larger so that we can mimick
 // it
 void *mm_mmap(size_t n) {
-  (void)n;
-  return NULL;
+  intptr_t new_brk = mmap_brk - n;
+
+  if (new_brk <= SBRK_REGION_SIZE || new_brk > BUFFER_SIZE) {
+    return (void *)(-1);
+  }
+  mmap_brk -= n;
+  unsigned char *p = buf_end_mmap - mmap_brk;
+  return (void *)p;
 }
+
 int mm_munmap(void *p, size_t n) {
-  (void)p;
-  (void)n;
+  if (!is_addr_in_mmap_buffer(p)) {
+    return -1;
+  }
+  if (((unsigned char *)p + n) >= buf_end_mmap) {
+    return -1;
+  }
+  mmap_brk += (intptr_t)n;
   return 0;
 }
 #else

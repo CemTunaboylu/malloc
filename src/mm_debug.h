@@ -12,6 +12,8 @@
 #define MUNMAPPED 9
 #define MUNMAPPED_EXCESS 10
 #define MMAPPED_BIGGER 11
+#define BY_MMAPPING 12
+#define BY_SBRKING 13
 
 #ifdef TESTING
 #include <internal.h>
@@ -60,7 +62,7 @@ static inline void mm_fatal(const char *msg) {
     } while (0);                                                               \
   }
 
-#define NUM_MARKERS 12
+#define NUM_MARKERS 14
 extern size_t markers[NUM_MARKERS];
 
 #define MM_MARK(ix) markers[ix] += 1

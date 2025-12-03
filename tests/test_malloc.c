@@ -540,6 +540,21 @@ static void test_realloc_with_size_zero(void) {
   TEST_ASSERT(q == NULL);
 }
 
+static void test_mmap(void) {
+  LOG("=== %s: start ===\n", __func__);
+
+  const size_t n = MIN_CAP_FOR_MMAP + 1;
+  char *p = (char *)ensuring_malloc(n);
+  TEST_CHECK(p);
+
+  MM_ASSERT_MARKER(BY_MMAPPING, 1);
+  MM_RESET_MARKER(BY_MMAPPING);
+  MM_RESET_MARKER(MALLOC_CALLED);
+
+  ensuring_free(p);
+  MM_ASSERT_MARKER(MUNMAPPED, 1);
+}
+
 TEST_LIST = {
     {"test_align", test_align},
     {"test_true_size", test_true_size},
@@ -562,5 +577,6 @@ TEST_LIST = {
     {"test_copy_block", test_copy_block},
     {"test_realloc_grow_and_shrink", test_realloc_grow_and_shrink},
     {"test_realloc_with_size_zero", test_realloc_with_size_zero},
+    {"test_mmap", test_mmap},
     {NULL, NULL}};
 #endif
