@@ -64,6 +64,13 @@ BlockPtr get_block_from_arenas(void *p) {
   return bp;
 }
 
+void correct_tail_if_eaten(BlockPtr blk) {
+  int is_tail_eaten =
+      (blk < a_head->tail) && ((void *)a_head->tail < (void *)end(blk));
+  if (is_tail_eaten)
+    a_head->tail = blk;
+}
+
 void insert_into_belonging_arena(BlockPtr b, size_t total_bytes_to_allocated,
                                  enum Allocation allocation) {
   size_t *allocated_bytes_ptr;
@@ -178,14 +185,9 @@ void FREE(void *p) {
   MM_MARK(FREED);
 
   if (!is_mmapped(blk)) {
-    size_t should_update_head = a_head->head == blk;
-    size_t should_update_tail = a_head->tail == blk;
     fuse_fwd(blk);
     fuse_bwd(&blk);
-    if (should_update_head)
-      a_head->head = blk;
-    if (should_update_tail)
-      a_head->tail = blk;
+    correct_tail_if_eaten(blk);
   }
 
   int is_at_tail = (!blk->next);
@@ -343,12 +345,8 @@ void *realloc_from_sbrk_to_sbrk(BlockPtr blk, size_t aligned_size) {
     if (fuse_next(blk) == -1)
       break;
   }
+  correct_tail_if_eaten(blk);
 
-  int is_tail_eaten =
-      (blk < a_head->tail) && ((void *)a_head->tail < (void *)end(blk));
-  if (is_tail_eaten) {
-    a_head->tail = blk;
-  }
   void *p = allocated_memory(blk);
   // could not grow in place enough, allocate new and copy, free old
   if (get_true_size(blk) < aligned_size) {
