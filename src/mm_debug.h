@@ -1,140 +1,90 @@
 #pragma once
 
+#define CALLOC_CALLED 0
+#define FREE_CALLED 1
+#define FREED 2
+#define MALLOC_CALLED 3
+#define REALLOC_CALLED 4
+#define REALLOC_ENOUGH_SIZE 5
+#define RELEASED 6
+#define FUSE_FWD_CALLED 7
+#define FUSE_BWD_CALLED 8
+#define MUNMAPPED 9
+#define MUNMAPPED_EXCESS 10
+#define MMAPPED_BIGGER 11
+
 #ifdef TESTING
-  #include <unistd.h>
-  #include <internal.h>
+#include <internal.h>
+#include <unistd.h>
 
-  static inline void mm_fatal(const char *msg) {
-      debug_write_str(msg);
-      debug_write_str("\n");
-      _exit(1);   // or __builtin_trap();
+static inline void mm_fatal(const char *msg) {
+  debug_write_str(msg);
+  debug_write_str("\n");
+  _exit(1); // or __builtin_trap();
+}
+
+#define MM_ASSERT(x)                                                           \
+  do {                                                                         \
+    if (!(x))                                                                  \
+      mm_fatal("MM_ASSERT failed: " #x);                                       \
+  } while (0)
+#define MM_UNREACHABLE() assert(!"unreachable")
+
+#ifdef ENABLE_LOG
+#define MM_ASSERT_LOG(label, actual, expected)                                 \
+  do {                                                                         \
+    if ((actual) != (expected)) {                                              \
+      debug_write_str("[MM_ASSERT] ");                                         \
+      debug_write_str(label);                                                  \
+      debug_write_str(": actual=");                                            \
+      debug_write_u64(actual);                                                 \
+      debug_write_str(", expected=");                                          \
+      debug_write_u64(expected);                                               \
+      debug_write_str("\n");                                                   \
+    }                                                                          \
+  } while (0);
+#else
+#define MM_ASSERT_LOG(label, actual, expected)                                 \
+  {                                                                            \
+    (void)label;                                                               \
+    (void)actual;                                                              \
+    (void)expected;                                                            \
+  }
+#endif
+
+#define MM_ASSERT_EQ_INT(label, actual, expected)                              \
+  {                                                                            \
+    do {                                                                       \
+      MM_ASSERT_LOG((label), (actual), (expected))                             \
+      MM_ASSERT((actual) == (expected));                                       \
+    } while (0);                                                               \
   }
 
-  #define MM_ASSERT(x) \
-    do { if (!(x)) mm_fatal("MM_ASSERT failed: " #x); } while (0)
-  #define MM_UNREACHABLE() assert(!"unreachable")
+#define NUM_MARKERS 12
+extern size_t markers[NUM_MARKERS];
 
-  #ifdef ENABLE_LOG
-    #define MM_ASSERT_LOG(label, actual, expected)                          \
-      do {                                                                  \
-        if ((actual) != (expected)) {                                       \
-            debug_write_str("[MM_ASSERT] ");                                \
-            debug_write_str(label);                                         \
-            debug_write_str(": actual=");                                   \
-            debug_write_u64(actual);                                        \
-            debug_write_str(", expected=");                                 \
-            debug_write_u64(expected);                                      \
-            debug_write_str("\n");                                          \
-        }                                                                   \
-      } while (0);
-  #else
-    #define MM_ASSERT_LOG(label, actual, expected) {(void)label; (void)actual; (void)expected;}
-  #endif
-
-  #define MM_ASSERT_EQ_INT(label, actual, expected)                     {\
-    do {                                                                 \
-        MM_ASSERT_LOG((label), (actual), (expected))                     \
-        MM_ASSERT((actual) == (expected));                               \
-    } while (0);                                                         \
-  }
-
-  extern int calloc_called;
-  #define MM_CALLOC_CALL() (calloc_called += 1)
-  #define MM_RESET_CALLOC_CALL_MARKER() (calloc_called = 0)
-  #define MM_ASSERT_CALLOC_CALLED(times) \
-    MM_ASSERT_EQ_INT("calloc_called", calloc_called, (times))
-
-  extern int free_called;
-  #define MM_FREE_CALL() (free_called += 1)
-  #define MM_RESET_FREE_CALL_MARKER() (free_called = 0)
-  #define MM_ASSERT_FREE_CALLED(times) \
-    MM_ASSERT_EQ_INT("free_called", free_called, (times))
-
-  extern int freed;
-  #define MM_FREED() (freed += 1)
-  #define MM_RESET_FREED_MARKER() (freed = 0)
-  #define MM_ASSERT_FREED(times) \
-    MM_ASSERT_EQ_INT("freed", freed, (times))
-
-  extern int malloc_called;
-  #define MM_MALLOC_CALL() (malloc_called += 1)
-  #define MM_RESET_MALLOC_CALL_MARKER() (malloc_called = 0)
-  #define MM_ASSERT_MALLOC_CALLED(times) \
-    MM_ASSERT_EQ_INT("malloc_called", malloc_called, (times))
-
-  extern int realloc_called;
-  #define MM_REALLOC_CALL() (realloc_called += 1)
-  #define MM_RESET_REALLOC_MARKER() (realloc_called = 0)
-  #define MM_ASSERT_REALLOC_CALLED(times) \
-    MM_ASSERT_EQ_INT("realloc_called", realloc_called, (times))
-
-  extern int realloc_enough_size;
-  #define MM_REALLOC_ENOUGH_SIZE() (realloc_enough_size += 1)
-  #define MM_RESET_REALLOC_ENOUGH_SIZE_MARKER() (realloc_enough_size = 0)
-  #define MM_ASSERT_REALLOC_ENOUGH_SIZE(times) \
-    MM_ASSERT_EQ_INT("realloc_enough_size", realloc_enough_size, (times))
-
-  extern int released;
-  #define MM_RELEASED() (released += 1)
-  #define MM_RESET_ASSERT_RELEASED_MARKER() (released = 0)
-  #define MM_ASSERT_RELEASED(times) \
-    MM_ASSERT_EQ_INT("released", released, (times))
-
-  extern int fuse_fwd_called;
-  #define MM_FUSE_FWD_CALL() (fuse_fwd_called += 1)
-  #define MM_RESET_FUSE_FWD_CALL_MARKER() (fuse_fwd_called = 0)
-  #define MM_ASSERT_FUSE_FWD_CALLED(times) \
-    MM_ASSERT_EQ_INT("fuse_fwd_called", fuse_fwd_called, (times))
-
-  extern int fuse_bwd_called;
-  #define MM_FUSE_BWD_CALL() (fuse_bwd_called += 1)
-  #define MM_RESET_FUSE_BWD_CALL_MARKER() (fuse_bwd_called = 0)
-  #define MM_ASSERT_FUSE_BWD_CALLED(times) \
-    MM_ASSERT_EQ_INT("fuse_bwd_called", fuse_bwd_called, (times))
+#define MM_MARK(ix) markers[ix] += 1
+#define MM_RESET_MARKER(ix) markers[ix] = 0
+// #define MM_ASSERT_MARKER(name, ix, times) \
+//   MM_ASSERT_EQ_INT(name, markers[ix], (times))
+#define MM_ASSERT_MARKER(ix, times) MM_ASSERT_EQ_INT("", markers[ix], (times))
 
 #else
-  #if defined(__GNUC__)
-    #define MM_ASSERT(x) ((void)0)
-    #define MM_UNREACHABLE() __builtin_unreachable()
-  #else
-    #define MM_ASSERT(x) ((void)0)
-    #define MM_UNREACHABLE() ((void)0)
-  #endif
+#if defined(__GNUC__)
+#define MM_ASSERT(x) ((void)0)
+#define MM_UNREACHABLE() __builtin_unreachable()
+#else
+#define MM_ASSERT(x) ((void)0)
+#define MM_UNREACHABLE() ((void)0)
+#endif
 
-  #define MM_CALLOC_CALL() ((void)0)
-  #define MM_RESET_CALLOC_CALL_MARKER() ((void)0)
-  #define MM_ASSERT_CALLOC_CALLED(times) ((void)times)
-
-  #define MM_FREED() ((void)0)
-  #define MM_RESET_FREED_MARKER() ((void)0)
-  #define MM_ASSERT_FREED(times) ((void)times)
-
-  #define MM_FREE_CALL() ((void)0)
-  #define MM_RESET_FREE_CALL_MARKER() ((void)0)
-  #define MM_ASSERT_FREE_CALLED(times)  ((void)times)
-
-  #define MM_MALLOC_CALL() ((void)0)
-  #define MM_RESET_MALLOC_CALL_MARKER() ((void)0)
-  #define MM_ASSERT_MALLOC_CALLED(times) ((void)times)
-
-  #define MM_REALLOC_CALL() ((void)0)
-  #define MM_RESET_REALLOC_MARKER() ((void)0)
-  #define MM_ASSERT_REALLOC_CALLED(times) ((void)times)
-
-  #define MM_REALLOC_ENOUGH_SIZE() ((void)0)
-  #define MM_RESET_REALLOC_ENOUGH_SIZE_MARKER() ((void)0)
-  #define MM_ASSERT_REALLOC_ENOUGH_SIZE(times) ((void)times)
-
-  #define MM_RELEASED() ((void)0)
-  #define MM_RESET_ASSERT_RELEASED_MARKER() ((void)0)
-  #define MM_ASSERT_RELEASED(times) ((void)times)
-
-  #define MM_FUSE_FWD_CALL() ((void)0)
-  #define MM_RESET_FUSE_FWD_CALL_MARKER() ((void)0) 
-  #define MM_ASSERT_FUSE_FWD_CALLED(times) ((void)times) 
-
-  #define MM_FUSE_BWD_CALL() ((void)0)
-  #define MM_RESET_FUSE_BWD_CALL_MARKER() ((void)0)
-  #define MM_ASSERT_FUSE_BWD_CALLED(times) ((void)times)
+#define MM_CALL(ix) ((void)ix)
+#define MM_RESET_MARKER(ix) ((void)ix)
+#define MM_ASSERT_CALLED(name, ix, times)                                      \
+  {                                                                            \
+    (void)name;                                                                \
+    ((void)ix);                                                                \
+    ((void)times);                                                             \
+  }
 
 #endif

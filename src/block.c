@@ -130,7 +130,7 @@ void fuse_fwd(BlockPtr b) {
   do {
     b->size += SIZE_OF_BLOCK + get_true_size(cursor->next);
     cursor = cursor->next;
-    MM_FUSE_FWD_CALL();
+    MM_MARK(FUSE_FWD_CALLED);
   } while (cursor->next && is_free(cursor->next));
   b->next = cursor->next;
   b->end_of_alloc_mem = end(b);
@@ -151,7 +151,7 @@ void fuse_bwd(BlockPtr *b) {
     BlockPtr prev = cursor->prev;
     prev->size += SIZE_OF_BLOCK + get_true_size(cursor);
     cursor = prev;
-    MM_FUSE_BWD_CALL();
+    MM_MARK(FUSE_BWD_CALLED);
   }
   cursor->next = next;
   if (next)

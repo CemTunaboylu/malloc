@@ -51,12 +51,8 @@ static size_t base_total_blocks;
 static size_t base_free_blocks;
 
 static void reset_markers(void) {
-  MM_RESET_MALLOC_CALL_MARKER();
-  MM_RESET_FREE_CALL_MARKER();
-  MM_RESET_FREED_MARKER();
-  MM_RESET_CALLOC_CALL_MARKER();
-  MM_RESET_FUSE_FWD_CALL_MARKER();
-  MM_RESET_FUSE_BWD_CALL_MARKER();
+  for (size_t ix = 0; ix < NUM_MARKERS; ix++)
+    markers[ix] = 0;
 }
 
 static void pre_test_sanity(void) {
@@ -107,54 +103,54 @@ BlockPtr recons_blk_from_user_mem_ptr(void *p) {
 }
 
 void *ensuring_calloc(size_t len, size_t size_of) {
-  MM_RESET_CALLOC_CALL_MARKER();
-  MM_RESET_MALLOC_CALL_MARKER();
+  MM_RESET_MARKER(CALLOC_CALLED);
+  MM_RESET_MARKER(MALLOC_CALLED);
   int *q = (int *)CALLOC_UNDER_TESTING(len, size_of);
-  MM_ASSERT_CALLOC_CALLED(1);
-  MM_ASSERT_MALLOC_CALLED(1);
+  MM_ASSERT_MARKER(CALLOC_CALLED, 1);
+  MM_ASSERT_MARKER(MALLOC_CALLED, 1);
   return q;
 }
 
 void ensure_freed(void) {
-  MM_ASSERT_FREED(1);
-  MM_RESET_FREED_MARKER();
+  MM_ASSERT_MARKER(FREED, 1);
+  MM_RESET_MARKER(FREED);
 }
 
 void ensuring_free(void *p) {
-  MM_RESET_FREE_CALL_MARKER();
+  MM_RESET_MARKER(FREE_CALLED);
   FREE_UNDER_TESTING(p);
-  MM_ASSERT_FREE_CALLED(1);
+  MM_ASSERT_MARKER(FREE_CALLED, 1);
   ensure_freed();
 }
 
 void *ensuring_malloc(size_t size) {
-  MM_RESET_MALLOC_CALL_MARKER();
+  MM_RESET_MARKER(MALLOC_CALLED);
   void *p = MALLOC_UNDER_TESTING(size);
-  MM_ASSERT_MALLOC_CALLED(1);
+  MM_ASSERT_MARKER(MALLOC_CALLED, 1);
   return p;
 }
 
-void ensure_fuse_fwd_is_called(int exp) {
-  MM_ASSERT_FUSE_FWD_CALLED(exp);
-  MM_RESET_FUSE_FWD_CALL_MARKER();
+void ensure_fuse_fwd_is_called(size_t exp) {
+  MM_ASSERT_MARKER(FUSE_FWD_CALLED, exp);
+  MM_RESET_MARKER(FUSE_FWD_CALLED);
 }
 
-void ensure_fuse_bwd_is_called(int exp) {
-  MM_ASSERT_FUSE_BWD_CALLED(exp);
-  MM_RESET_FUSE_BWD_CALL_MARKER();
+void ensure_fuse_bwd_is_called(size_t exp) {
+  MM_ASSERT_MARKER(FUSE_BWD_CALLED, exp);
+  MM_RESET_MARKER(FUSE_BWD_CALLED);
 }
 
 void *ensuring_realloc(void *p, size_t size) {
-  MM_RESET_MALLOC_CALL_MARKER();
-  MM_RESET_REALLOC_MARKER();
+  MM_RESET_MARKER(MALLOC_CALLED);
+  MM_RESET_MARKER(REALLOC_CALLED);
   void *r = REALLOC_UNDER_TESTING(p, size);
-  MM_ASSERT_REALLOC_CALLED(1);
+  MM_ASSERT_MARKER(REALLOC_CALLED, 1);
   return r;
 }
 
 void ensure_realloc_enough_size(void) {
-  MM_ASSERT_REALLOC_ENOUGH_SIZE(1);
-  MM_RESET_REALLOC_ENOUGH_SIZE_MARKER();
+  MM_ASSERT_MARKER(REALLOC_ENOUGH_SIZE, 1);
+  MM_RESET_MARKER(REALLOC_ENOUGH_SIZE);
 }
 
 static void test_align(void) {
@@ -245,8 +241,8 @@ static void test_malloc_zero(void) {
   void *p = ensuring_malloc(0);
   TEST_CHECK(p == NULL);
   FREE_UNDER_TESTING(p);
-  MM_ASSERT_FREE_CALLED(0);
-  MM_ASSERT_FREED(0);
+  MM_ASSERT_MARKER(FREE_CALLED, 0);
+  MM_ASSERT_MARKER(FREED, 0);
 }
 
 static void test_first_malloc_new_head(void) {
@@ -312,7 +308,7 @@ static void test_forward_fusion_2_blocks(void) {
 
   fuse_fwd(blk);
   ensure_fuse_fwd_is_called(1);
-  MM_ASSERT_FUSE_BWD_CALLED(0);
+  MM_ASSERT_MARKER(FUSE_BWD_CALLED, 0);
 
   LOG("\tpost-fwd-fusion ===\n");
 
@@ -354,7 +350,7 @@ static void test_backward_fusion_2_blocks(void) {
 
   fuse_bwd(&blk);
   ensure_fuse_bwd_is_called(1);
-  MM_ASSERT_FUSE_FWD_CALLED(0);
+  MM_ASSERT_MARKER(FUSE_FWD_CALLED, 0);
 
   LOG("\t post-bwd-fusion ===\n");
 
@@ -385,9 +381,9 @@ static void test_free_no_release_or_fusion(void) {
   void *p = ptrs[1];
 
   ensuring_free(p);
-  MM_ASSERT_FUSE_FWD_CALLED(0);
-  MM_ASSERT_FUSE_BWD_CALLED(0);
-  MM_ASSERT_RELEASED(0);
+  MM_ASSERT_MARKER(FUSE_FWD_CALLED, 0);
+  MM_ASSERT_MARKER(FUSE_BWD_CALLED, 0);
+  MM_ASSERT_MARKER(RELEASED, 0);
 
   LOG("\tpost-free ===\n");
 
@@ -435,7 +431,7 @@ static void test_free_with_fusion_no_release(void) {
   ensuring_free(p);
   ensure_fuse_fwd_is_called(1);
   ensure_fuse_bwd_is_called(2);
-  MM_ASSERT_RELEASED(0);
+  MM_ASSERT_MARKER(RELEASED, 0);
 
   LOG("\tpost-free middle ===\n");
 
@@ -499,11 +495,11 @@ static void test_realloc_grow_and_shrink(void) {
   const size_t re_grow_n = 100;
 
   char *q = (char *)ensuring_realloc(p, re_grow_n);
-  MM_ASSERT_MALLOC_CALLED(1);
-  MM_RESET_MALLOC_CALL_MARKER();
-  MM_ASSERT_FREE_CALLED(1);
+  MM_ASSERT_MARKER(MALLOC_CALLED, 1);
+  MM_RESET_MARKER(MALLOC_CALLED);
+  MM_ASSERT_MARKER(FREE_CALLED, 1);
   ensure_freed();
-  MM_RESET_FREE_CALL_MARKER();
+  MM_RESET_MARKER(FREE_CALLED);
   TEST_ASSERT(q != NULL);
   for (int i = 0; i < (int)n; i++)
     TEST_CHECK(q[i] == (char)i);
@@ -513,8 +509,8 @@ static void test_realloc_grow_and_shrink(void) {
   const size_t re_shrink_n = 5;
   char *r = (char *)REALLOC_UNDER_TESTING(q, re_shrink_n);
   ensure_realloc_enough_size();
-  MM_ASSERT_MALLOC_CALLED(0);
-  MM_ASSERT_FREE_CALLED(0);
+  MM_ASSERT_MARKER(MALLOC_CALLED, 0);
+  MM_ASSERT_MARKER(FREE_CALLED, 0);
   TEST_ASSERT(r != NULL);
   for (int i = 0; i < (int)re_shrink_n; i++)
     TEST_CHECK(r[i] == (char)i);
@@ -532,14 +528,14 @@ static void test_realloc_with_size_zero(void) {
   const size_t n = 10;
   char *p = (char *)ensuring_malloc(n);
   TEST_CHECK(p);
-  MM_RESET_MALLOC_CALL_MARKER();
+  MM_RESET_MARKER(MALLOC_CALLED);
 
   const size_t zero = 0;
 
   char *q = (char *)ensuring_realloc(p, zero);
-  MM_ASSERT_MALLOC_CALLED(0);
-  MM_ASSERT_FREE_CALLED(1);
-  MM_RESET_FREE_CALL_MARKER();
+  MM_ASSERT_MARKER(MALLOC_CALLED, 0);
+  MM_ASSERT_MARKER(FREE_CALLED, 1);
+  MM_RESET_MARKER(FREE_CALLED);
   ensure_freed();
   TEST_ASSERT(q == NULL);
 }

@@ -139,7 +139,7 @@ BlockPtr first_fit_find(size_t aligned_size) {
 // properly aligned for object
 // if succeeds, initialize all bytes to 0.
 void *CALLOC(size_t len, size_t size_of) {
-  MM_CALLOC_CALL();
+  MM_MARK(CALLOC_CALLED);
   if (size_of != 0 && len > (SIZE_MAX / size_of)) {
     return NULL;
   }
@@ -157,7 +157,7 @@ void *CALLOC(size_t len, size_t size_of) {
 void FREE(void *p) {
   if (p == NULL)
     return;
-  MM_FREE_CALL();
+  MM_MARK(FREE_CALLED);
   BlockPtr blk = get_block_from_arenas(p);
   if (blk == NULL)
     return;
@@ -175,7 +175,7 @@ void FREE(void *p) {
   }
 
   mark_as_free(blk);
-  MM_FREED();
+  MM_MARK(FREED);
 
   if (!is_mmapped(blk)) {
     size_t should_update_head = a_head->head == blk;
@@ -203,6 +203,7 @@ void FREE(void *p) {
     if (blk->next)
       blk->next->prev = blk->prev;
     mm_munmap((void *)blk, get_true_size(blk) + SIZE_OF_BLOCK);
+    MM_MARK(MUNMAPPED);
     allocated_bytes_update(&(ma_head->total_bytes_allocated), -back);
     return;
   }
@@ -222,7 +223,7 @@ void FREE(void *p) {
 
   // iff we truly release some pages, then we can project the change
   MM_ASSERT((char *)old_tail > (char *)CURRENT_BRK);
-  MM_RELEASED();
+  MM_MARK(RELEASED);
   MM_ASSERT(a_head->total_bytes_allocated >= back);
   a_head->tail = prev_of_tail;
   allocated_bytes_update(&(a_head->total_bytes_allocated), -back);
@@ -242,7 +243,7 @@ static inline void split(BlockPtr blk, size_t aligned_size) {
 }
 
 void *MALLOC(size_t size) {
-  MM_MALLOC_CALL();
+  MM_MARK(MALLOC_CALLED);
   if (size == 0)
     return NULL;
 
@@ -279,6 +280,7 @@ static inline void *realloc_from_mmap_to_mmap(BlockPtr blk,
   // We have more than we need, munmap the unneeded part from the end, and
   // return the same pointer. Nothing in the arena linkedlist changes.
   if (true_size > aligned_size) {
+    MM_MARK(MUNMAPPED_EXCESS);
     size_t to_munmap_size = true_size - aligned_size;
     void *moved_p = ((char *)p + aligned_size);
     mm_munmap(moved_p, to_munmap_size);
@@ -300,6 +302,7 @@ static inline void *realloc_from_mmap_to_mmap(BlockPtr blk,
   } else if (ma_head->tail == blk) {
     ma_head->tail = new_blk;
   }
+  MM_MARK(MMAPPED_BIGGER);
   FREE(p);
   return new;
 }
@@ -361,7 +364,7 @@ void *realloc_from_sbrk_to_sbrk(BlockPtr blk, size_t aligned_size) {
   }
   // grew or had enough but may need splitting now
   else if (is_splittable(blk, aligned_size)) {
-    MM_REALLOC_ENOUGH_SIZE();
+    MM_MARK(REALLOC_ENOUGH_SIZE);
     split(blk, aligned_size);
   }
   return p;
@@ -369,7 +372,7 @@ void *realloc_from_sbrk_to_sbrk(BlockPtr blk, size_t aligned_size) {
 
 // TODO: if mmaped, what to do?
 void *REALLOC(void *p, size_t size) {
-  MM_REALLOC_CALL();
+  MM_MARK(REALLOC_CALLED);
   // if we don't have anywhere to realloc, it is effectively a malloc
   if (p == NULL)
     return MALLOC(size);
