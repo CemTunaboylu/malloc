@@ -204,7 +204,11 @@ void FREE(void *p) {
       blk->prev->next = blk->next;
     if (blk->next)
       blk->next->prev = blk->prev;
-    mm_munmap((void *)blk, get_true_size(blk) + SIZE_OF_BLOCK);
+    int result = mm_munmap((void *)blk, get_true_size(blk) + SIZE_OF_BLOCK);
+    if (result == -1) {
+      perror("error while munmapping");
+      return;
+    }
     MM_MARK(MUNMAPPED);
     allocated_bytes_update(&(ma_head->total_bytes_allocated), -back);
     return;
