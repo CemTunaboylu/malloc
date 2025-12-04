@@ -556,31 +556,8 @@ static void test_mmap(void) {
 }
 
 static void test_bin_macros(void) {
-  if (MAP_STEP_BY_TYPE_WIDTH == 128) {
-    TEST_ASSERT(NUM_ELMNTS_NECESSARY_TO_MAP == 1);
-    for (size_t i = 0; i < MAP_STEP_BY_TYPE_WIDTH; i++) {
-      TEST_ASSERT(CORRESPONDING_BIT_INDEX(i) == i);
-      TEST_ASSERT(BIN_MAP_INDEX(i) == 0);
-    }
-    for (size_t i = MAP_STEP_BY_TYPE_WIDTH; i < (MAP_STEP_BY_TYPE_WIDTH * 2);
-         i++) {
-      TEST_ASSERT(CORRESPONDING_BIT_INDEX(i) == i % MAP_STEP_BY_TYPE_WIDTH);
-      TEST_ASSERT(BIN_MAP_INDEX(i) == 0);
-    }
-  }
-
-#undef MAP_ELMNT_TYPE
-#define MAP_ELMNT_TYPE uint64_t
-#undef BIN_MAP_INDEX
-#define BIN_MAP_INDEX(b) (b / MAP_STEP_BY_TYPE_WIDTH)
-#undef MAP_STEP_BY_TYPE_WIDTH
-#define MAP_STEP_BY_TYPE_WIDTH (sizeof(MAP_ELMNT_TYPE) * 8)
-#undef NUM_ELMNTS_NECESSARY_TO_MAP
-#define NUM_ELMNTS_NECESSARY_TO_MAP ((NUM_CHUNK_SIZES) / MAP_STEP_BY_TYPE_WIDTH)
-#undef CORRESPONDING_BIT_INDEX
-#define CORRESPONDING_BIT_INDEX(b) (b & (MAP_STEP_BY_TYPE_WIDTH - 1))
-
-  TEST_ASSERT(NUM_ELMNTS_NECESSARY_TO_MAP == 2);
+  size_t exp_num_elms = 4;
+  TEST_ASSERT(NUM_ELMNTS_NECESSARY_TO_MAP == exp_num_elms);
   for (size_t i = 0; i < MAP_STEP_BY_TYPE_WIDTH; i++) {
     TEST_ASSERT(CORRESPONDING_BIT_INDEX(i) == i);
     TEST_ASSERT(BIN_MAP_INDEX(i) == 0);
@@ -589,6 +566,9 @@ static void test_bin_macros(void) {
        i++) {
     TEST_ASSERT(CORRESPONDING_BIT_INDEX(i) == i % MAP_STEP_BY_TYPE_WIDTH);
     TEST_ASSERT(BIN_MAP_INDEX(i) == 1);
+  }
+  for (size_t i = 1; i < (exp_num_elms + 1); i++) {
+    TEST_ASSERT(BIN_MAP_INDEX(i * MAP_STEP_BY_TYPE_WIDTH) == i);
   }
 }
 
