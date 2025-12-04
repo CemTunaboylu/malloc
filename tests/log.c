@@ -39,7 +39,7 @@
     }
 
 void print_list_into_test_file(void) {
-  BlockPtr head = a_head->head;
+  BlockPtr head = a_head.head;
   if (head == NULL)
     return;
   for (BlockPtr b = head; b; b = b->next) {

@@ -2,9 +2,9 @@
 #include <internal.h>
 #include <malloc/malloc.h>
 
-extern ArenaPtr a_head;
+extern struct Arena a_head;
 
-BlockPtr _mm_block_header(void) { return a_head->head; }
+BlockPtr _mm_block_header(void) { return a_head.head; }
 
 // Global counter for bytes obtained from the OS during TESTING builds.
 static size_t total_global_bytes_from_os = 0;
@@ -25,7 +25,7 @@ static int pred_true(BlockPtr b) {
 // Count blocks that satisfy a given predicate.
 size_t _mm_blocks(int (*predicate)(BlockPtr)) {
   size_t c = 0;
-  for (BlockPtr b = a_head->head; b; b = b->next) {
+  for (BlockPtr b = a_head.head; b; b = b->next) {
     if (predicate(b))
       c++;
   }
@@ -37,7 +37,7 @@ size_t _mm_non_free_blocks(void) { return _mm_blocks(pred_is_used); }
 size_t _mm_total_blocks(void) { return _mm_blocks(pred_true); }
 
 void _mm_tear_down_allocator(void) {
-  for (BlockPtr b = a_head->head; b; b = b->next) {
+  for (BlockPtr b = a_head.head; b; b = b->next) {
     free(b);
   }
 }

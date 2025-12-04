@@ -21,7 +21,7 @@ static void post_test_sanity(void);
 #include <block.h>
 #include <internal.h>
 
-extern ArenaPtr a_head;
+extern struct Arena a_head;
 extern size_t SIZE_OF_BLOCK;
 
 extern void *mm_calloc(size_t, size_t);
@@ -61,7 +61,7 @@ static void pre_test_sanity(void) {
   base_total_blocks = _mm_total_blocks();
   base_free_blocks = _mm_free_blocks();
 
-  TEST_CHECK(a_head->head == NULL);
+  TEST_CHECK(a_head.head == NULL);
   TEST_CHECK(base_total_blocks == 0);
   TEST_CHECK(base_free_blocks == 0);
 }
@@ -78,7 +78,7 @@ static void post_test_sanity(void) {
   TEST_MSG("free block mismatch: %zu -> %zu", base_free_blocks,
            _mm_free_blocks());
 
-  TEST_CHECK(a_head->head == NULL);
+  TEST_CHECK(a_head.head == NULL);
 }
 
 static inline int is_aligned(void *p) {
@@ -212,10 +212,10 @@ static void test_true_size(void) {
 static void test_invalid_addr_outside_before_for_is_valid_addr(void) {
   void *p = ensuring_malloc(1);
   TEST_CHECK(p != NULL);
-  BlockPtr head = a_head->head;
+  BlockPtr head = a_head.head;
   void *invalid = (char *)head + sizeof(struct SBlock) * 9;
   TEST_CHECK_(
-      get_block_from_main_arena(a_head, invalid) == NULL,
+      get_block_from_main_arena(&a_head, invalid) == NULL,
       "address %p should have been invalid since it is before list head %p",
       invalid, (void *)head);
   ensuring_free(p);
@@ -225,14 +225,14 @@ static void test_invalid_addr_outside_after_for_is_valid_addr(void) {
   void *p = ensuring_malloc(1);
   TEST_CHECK(p != NULL);
   void *invalid = (char *)p + sizeof(struct SBlock);
-  TEST_CHECK(get_block_from_main_arena(a_head, invalid) == NULL);
+  TEST_CHECK(get_block_from_main_arena(&a_head, invalid) == NULL);
   ensuring_free(p);
 }
 
 static void test_valid_addr_for_is_valid_addr(void) {
   void *p = ensuring_malloc(1);
   TEST_CHECK(p != NULL);
-  TEST_CHECK(get_block_from_main_arena(a_head, p));
+  TEST_CHECK(get_block_from_main_arena(&a_head, p));
   ensuring_free(p);
 }
 
@@ -246,12 +246,12 @@ static void test_malloc_zero(void) {
 }
 
 static void test_first_malloc_new_head(void) {
-  TEST_CHECK(a_head->head == NULL);
+  TEST_CHECK(a_head.head == NULL);
   void *p = ensuring_malloc(5);
   TEST_CHECK(p != NULL);
-  TEST_CHECK(a_head->head != NULL);
+  TEST_CHECK(a_head.head != NULL);
   ensuring_free(p);
-  TEST_CHECK(a_head->head == NULL);
+  TEST_CHECK(a_head.head == NULL);
 }
 
 static void test_header_alignment_and_size(void) {
@@ -518,8 +518,8 @@ static void test_realloc_grow_and_shrink(void) {
   LOG("\tafter shrinking realloc with %lu ===\n", re_shrink_n);
   // this should free the whole thing, since it will fuse bk and fw
   ensuring_free(r);
-  TEST_ASSERT(a_head->head == NULL);
-  TEST_ASSERT(a_head->tail == NULL);
+  TEST_ASSERT(a_head.head == NULL);
+  TEST_ASSERT(a_head.tail == NULL);
 }
 
 static void test_realloc_with_size_zero(void) {
@@ -573,10 +573,9 @@ static void test_bin_macros(void) {
 }
 
 static void test_mark_unmark_binmap(void) {
-  for (size_t i = 0; i < NUM_CHUNK_SIZES; i++) {
+  for (size_t i = 0; i < NUM_BINS; i++) {
     MARK_BIN(a_head, i);
-
-    uint32_t exp_val = (1 << (i % MAP_STEP_BY_TYPE_WIDTH));
+    uint32_t exp_val = ((size_t)1 << (i % MAP_STEP_BY_TYPE_WIDTH));
     uint32_t read_val = READ_BINMAP(a_head, i);
 
     TEST_ASSERT_(read_val == exp_val,
@@ -589,6 +588,23 @@ static void test_mark_unmark_binmap(void) {
 
     TEST_ASSERT_(read_val == 0, "bin %lu has bit value %u, should have been %u",
                  i, read_val, 0);
+  }
+}
+
+static void test_bin_repositioning_trick(void) {
+  for (size_t i = 0; i < SLOTS_FOR_BLOCK_OFFSET_ALIGNMENT; i++) {
+    a_head.bins[i] = 0;
+  }
+
+  BlockPtr bin;
+  for (size_t i = 0; i < NUM_BINS; i++) {
+    bin = BLK_PTR_IN_BIN_AT(a_head, i);
+    TEST_ASSERT_(bin == bin->next,
+                 "next must point to itself, exp:%p != got:%p", (void *)bin,
+                 (void *)bin->next);
+    TEST_ASSERT_(bin == bin->prev,
+                 "prev must point to itself, exp:%p != got:%p", (void *)bin,
+                 (void *)bin->prev);
   }
 }
 
@@ -617,5 +633,6 @@ TEST_LIST = {
     {"test_mmap", test_mmap},
     {"test_bin_macros", test_bin_macros},
     {"test_mark_unmark_binmap", test_mark_unmark_binmap},
+    {"test_bin_repositioning_trick", test_bin_repositioning_trick},
     {NULL, NULL}};
 #endif

@@ -45,30 +45,48 @@ extern size_t SIZE_OF_BLOCK;
 
 /* ----- arena ----- */
 
-ArenaPtr a_head;
-static char head_buffer[sizeof(struct Arena)] = {0};
+#ifndef TESTING
+static
+#endif
+    struct Arena a_head = {.head = NULL,
+                           .tail = NULL,
+                           .bins = {NULL},
+                           .binmap = {0},
+                           .fastbin = {NULL},
+                           .total_bytes_allocated = 0,
+                           .total_free_bytes = 0};
 
-MMapArenaPtr ma_head;
-static char mm_head_buffer[sizeof(struct MMapArena)] = {0};
+#ifndef TESTING
+static
+#endif
+    struct MMapArena ma_head = {.head = NULL,
+                                .tail = NULL,
+                                .total_bytes_allocated = 0,
+                                .total_free_bytes = 0,
+                                .num_mmapped_regions = 0};
 
-__attribute__((constructor)) void init_arena_heads(void) {
-  a_head = (ArenaPtr)&head_buffer;
-  ma_head = (MMapArenaPtr)&mm_head_buffer;
+__attribute__((constructor)) void init_main_arena_bins(void) {
+  BlockPtr bin;
+  for (size_t i = 0; i < NUM_BINS; i++) {
+    bin = BLK_PTR_IN_BIN_AT(a_head, i);
+    bin->next = bin;
+    bin->prev = bin;
+  }
 }
 
 BlockPtr get_block_from_arenas(void *p) {
-  BlockPtr bp = get_block_from_main_arena(a_head, p);
+  BlockPtr bp = get_block_from_main_arena(&a_head, p);
   // try mmap arena
   if (bp == NULL)
-    bp = get_block_from_mmapped_arena(ma_head, p);
+    bp = get_block_from_mmapped_arena(&ma_head, p);
   return bp;
 }
 
 void correct_tail_if_eaten(BlockPtr blk) {
   int is_tail_eaten =
-      (blk < a_head->tail) && ((void *)a_head->tail < (void *)end(blk));
+      (blk < a_head.tail) && ((void *)a_head.tail < (void *)end(blk));
   if (is_tail_eaten)
-    a_head->tail = blk;
+    a_head.tail = blk;
 }
 
 void insert_into_belonging_arena(BlockPtr b, size_t total_bytes_to_allocated,
@@ -76,17 +94,17 @@ void insert_into_belonging_arena(BlockPtr b, size_t total_bytes_to_allocated,
   size_t *allocated_bytes_ptr;
   BlockPtr *tail;
   if (allocation == MMAP) {
-    if (!ma_head->head) {
-      ma_head->head = b;
+    if (!ma_head.head) {
+      ma_head.head = b;
     }
-    tail = &(ma_head->tail);
-    allocated_bytes_ptr = &(ma_head->total_bytes_allocated);
+    tail = &(ma_head.tail);
+    allocated_bytes_ptr = &(ma_head.total_bytes_allocated);
   } else {
-    if (!a_head->head) {
-      a_head->head = b;
+    if (!a_head.head) {
+      a_head.head = b;
     }
-    tail = &(a_head->tail);
-    allocated_bytes_ptr = &(a_head->total_bytes_allocated);
+    tail = &(a_head.tail);
+    allocated_bytes_ptr = &(a_head.total_bytes_allocated);
   }
 
   // if there is a last, append this block there
@@ -132,7 +150,7 @@ BlockPtr extend_heap(size_t aligned_size, enum Allocation allocation) {
 
 // we don't search on mmapped arenas, if it is freed, we munmap it immediately.
 BlockPtr first_fit_find(size_t aligned_size) {
-  BlockPtr curr = a_head->head;
+  BlockPtr curr = a_head.head;
   // as long as we have block at hand, and it's either NOT free or NOT big
   // enough
   while (curr && !(is_free(curr) && get_true_size(curr) >= aligned_size)) {
@@ -198,11 +216,11 @@ void FREE(void *p) {
   size_t back = SIZE_OF_BLOCK + get_true_size(blk);
   // if it is mmapped, just munmap it
   if (is_mmapped(blk)) {
-    MM_ASSERT(ma_head->total_bytes_allocated >= back);
+    MM_ASSERT(ma_head.total_bytes_allocated >= back);
     if (is_at_tail)
-      ma_head->tail = blk->prev;
+      ma_head.tail = blk->prev;
     if (is_at_head)
-      ma_head->head = blk->next;
+      ma_head.head = blk->next;
     if (blk->prev)
       blk->prev->next = blk->next;
     if (blk->next)
@@ -213,7 +231,7 @@ void FREE(void *p) {
       return;
     }
     MM_MARK(MUNMAPPED);
-    allocated_bytes_update(&(ma_head->total_bytes_allocated), -back);
+    allocated_bytes_update(&(ma_head.total_bytes_allocated), -back);
     return;
   }
 
@@ -224,7 +242,7 @@ void FREE(void *p) {
   // TODO:  we must find delegate freeing to which ever arena this chunk is
   // from
   void *old_tail = CURRENT_BRK;
-  BlockPtr prev_of_tail = a_head->tail->prev;
+  BlockPtr prev_of_tail = a_head.tail->prev;
   if (mm_sbrk(-back) == (void *)-1) {
     perror("error while releasing the tail");
     return;
@@ -233,21 +251,21 @@ void FREE(void *p) {
   // iff we truly release some pages, then we can project the change
   MM_ASSERT((char *)old_tail > (char *)CURRENT_BRK);
   MM_MARK(RELEASED);
-  MM_ASSERT(a_head->total_bytes_allocated >= back);
-  a_head->tail = prev_of_tail;
-  allocated_bytes_update(&(a_head->total_bytes_allocated), -back);
+  MM_ASSERT(a_head.total_bytes_allocated >= back);
+  a_head.tail = prev_of_tail;
+  allocated_bytes_update(&(a_head.total_bytes_allocated), -back);
   if (!is_at_head)
-    a_head->tail->next = NULL;
+    a_head.tail->next = NULL;
   else {
-    a_head->head = NULL;
-    a_head->tail = NULL;
+    a_head.head = NULL;
+    a_head.tail = NULL;
   }
 }
 
 static inline void split(BlockPtr blk, size_t aligned_size) {
   split_block(blk, aligned_size);
-  if (a_head->tail == blk) {
-    a_head->tail = blk->next;
+  if (a_head.tail == blk) {
+    a_head.tail = blk->next;
   }
 }
 
@@ -260,7 +278,7 @@ void *MALLOC(size_t size) {
   enum Allocation allocation = allocation_type_for(aligned_size);
   BlockPtr blk;
 
-  if (allocation == MMAP || a_head->head == NULL) {
+  if (allocation == MMAP || a_head.head == NULL) {
     // extend_heap sets the head if it finds out that it is null
     blk = extend_heap(aligned_size, allocation);
   } else {
@@ -306,10 +324,10 @@ static inline void *realloc_from_mmap_to_mmap(BlockPtr blk,
   transfer_flags(blk, new_blk);
   switch_places_in_list(blk, new_blk);
   // Since this is new memory, arena's head/tail must be updated if necessary
-  if (ma_head->head == blk) {
-    ma_head->head = new_blk;
-  } else if (ma_head->tail == blk) {
-    ma_head->tail = new_blk;
+  if (ma_head.head == blk) {
+    ma_head.head = new_blk;
+  } else if (ma_head.tail == blk) {
+    ma_head.tail = new_blk;
   }
   MM_MARK(MMAPPED_BIGGER);
   FREE(p);

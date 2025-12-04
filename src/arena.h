@@ -1,6 +1,7 @@
 #pragma once
 
 #include <block.h>
+#include <stddef.h>
 #include <stdint.h>
 #include <sys/types.h>
 
@@ -9,24 +10,36 @@ typedef struct MMapArena *MMapArenaPtr;
 
 #define MAP_ELMNT_TYPE uint32_t
 #define MIN_CAP_FOR_MMAP (131072) // 128 KiB
-#define NUM_CHUNK_SIZES (128)
+#define NUM_BINS (128)
+// To be able to pull the repositioning trick to first element,
+// we need a buffer with the size of the rest of the block.
+#define OFFSET_OF_NEXT offsetof(struct SBlock, next)
+#define SLOTS_FOR_BLOCK_OFFSET_ALIGNMENT (OFFSET_OF_NEXT / sizeof(size_t))
+#define BLOCK_OFFSET_ALIGNED_IX(ix) (ix + SLOTS_FOR_BLOCK_OFFSET_ALIGNMENT)
+
+#define NUM_SLOTS_IN_BIN (SLOTS_FOR_BLOCK_OFFSET_ALIGNMENT + NUM_BINS * 2)
+#define NUM_SMALL_BINS (64)
 #define NUM_FAST_BINS (7)
 
 #define MAP_STEP_BY_TYPE_WIDTH (sizeof(MAP_ELMNT_TYPE) * 8)
-#define NUM_ELMNTS_NECESSARY_TO_MAP ((NUM_CHUNK_SIZES) / MAP_STEP_BY_TYPE_WIDTH)
+#define NUM_ELMNTS_NECESSARY_TO_MAP ((NUM_BINS) / MAP_STEP_BY_TYPE_WIDTH)
 
 #define BIN_MAP_INDEX(b) (b / MAP_STEP_BY_TYPE_WIDTH)
 #define CORRESPONDING_BIT_INDEX(bin_ix) (bin_ix & (MAP_STEP_BY_TYPE_WIDTH - 1))
-#define CORRESPONDING_BIT(bin_ix) (1 << CORRESPONDING_BIT_INDEX(bin_ix))
+#define CORRESPONDING_BIT(bin_ix) ((size_t)1 << CORRESPONDING_BIT_INDEX(bin_ix))
 
 #define MARK_BIN(a, bin_ix)                                                    \
-  (a->binmap[BIN_MAP_INDEX(bin_ix)] |= (CORRESPONDING_BIT(bin_ix)))
+  (a.binmap[BIN_MAP_INDEX(bin_ix)] |= (CORRESPONDING_BIT(bin_ix)))
 
 #define UNMARK_BIN(a, bin_ix)                                                  \
-  (a->binmap[BIN_MAP_INDEX(bin_ix)] &= ~CORRESPONDING_BIT(bin_ix))
+  (a.binmap[BIN_MAP_INDEX(bin_ix)] &= ~CORRESPONDING_BIT(bin_ix))
 
 #define READ_BINMAP(a, bin_ix)                                                 \
-  (a->binmap[BIN_MAP_INDEX(bin_ix)] & CORRESPONDING_BIT(bin_ix))
+  (a.binmap[BIN_MAP_INDEX(bin_ix)] & CORRESPONDING_BIT(bin_ix))
+
+// The repositioning trick glibc leverages for faking BlockPtr's in bins
+// NOTE: first element of the list (bin[0], bin[1]) are for unsorted bin
+#define BLK_PTR_IN_BIN_AT(a, i) ((BlockPtr)(&a.bins[i * 2]))
 
 // Note: thread-safety is not a concern at the moment,
 // thus we only have 2 arenas: sbrk arena and mmap arena.
@@ -35,12 +48,13 @@ struct Arena {
   BlockPtr tail;
   /*
    * unsorted bin: bins[0]
-   * small bins: bins[1:63] [16,24,..., 512] bytes
-   * large bins: bins[64:127] sorted range of sizes, > 512 bytes
-   * each bin has 2 pointers fw, bk to line up a doubly linkedlist, thus the
-   * multiplication
+   * small bins: bins[1:NUM_SMALL_BINS+1] with values
+   *    [MIN_ALIGNMENT:cap:MIN_ALIGNMENT] where cap < 512
+   * large bins: bins[NUM_SMALL_BINS+2:127]
+   * sorted range of sizes, > 512 bytes each bin has 2 pointers fw, bk to line
+   *    up a doubly linkedlist, thus the multiplication
    */
-  BlockPtr bins[NUM_CHUNK_SIZES * 2];
+  BlockPtr bins[NUM_SLOTS_IN_BIN];
   // If a bin is empty, the bit that the corresponds to the index of that bin is
   // set to 0. Since we have NUM_CHUNK_SIZES bins and not all architectures have
   // a type that can  support it we "dynamically" arrange an array if we need

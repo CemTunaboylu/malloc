@@ -24,10 +24,11 @@ extern size_t _mm_free_blocks(void);     // current free blocks
 extern size_t _mm_non_free_blocks(void); // current non-free blocks
 extern size_t _mm_total_blocks(void);    // current free blocks
 extern void _mm_tear_down_allocator(void);
+
+// test probes use a_head, thus we need to make it external
+extern struct Arena a_head;
 #endif
 
-// test probes use head, thus we need to make it external
-extern ArenaPtr a_head;
 extern const size_t MAX_ALIGNMENT;
 extern size_t NUM_BITS_SPARED_FROM_ALIGNMENT;
 

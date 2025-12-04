@@ -20,11 +20,11 @@ enum LSB_Flag {
 
 struct SBlock {
   size_t __LSB_ENCODED size;
-  BlockPtr next;
-  BlockPtr prev;
   // points to end of the allocated user memory to add another check
   // for reconstructing the block from given pointer
   void *end_of_alloc_mem;
+  BlockPtr next;
+  BlockPtr prev;
 };
 
 BlockPtr reconstruct_from_user_memory(const void *);
