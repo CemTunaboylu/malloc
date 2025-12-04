@@ -572,6 +572,26 @@ static void test_bin_macros(void) {
   }
 }
 
+static void test_mark_unmark_binmap(void) {
+  for (size_t i = 0; i < NUM_CHUNK_SIZES; i++) {
+    MARK_BIN(a_head, i);
+
+    uint32_t exp_val = (1 << (i % MAP_STEP_BY_TYPE_WIDTH));
+    uint32_t read_val = READ_BINMAP(a_head, i);
+
+    TEST_ASSERT_(read_val == exp_val,
+                 "bin %lu has bit value %u, should have been %u", i, read_val,
+                 exp_val);
+
+    UNMARK_BIN(a_head, i);
+
+    read_val = READ_BINMAP(a_head, i);
+
+    TEST_ASSERT_(read_val == 0, "bin %lu has bit value %u, should have been %u",
+                 i, read_val, 0);
+  }
+}
+
 TEST_LIST = {
     {"test_align", test_align},
     {"test_true_size", test_true_size},
@@ -596,6 +616,6 @@ TEST_LIST = {
     {"test_realloc_with_size_zero", test_realloc_with_size_zero},
     {"test_mmap", test_mmap},
     {"test_bin_macros", test_bin_macros},
-
+    {"test_mark_unmark_binmap", test_mark_unmark_binmap},
     {NULL, NULL}};
 #endif
