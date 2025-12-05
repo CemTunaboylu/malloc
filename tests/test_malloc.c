@@ -22,6 +22,7 @@ static void post_test_sanity(void);
 #include <internal.h>
 
 extern struct Arena a_head;
+extern struct MMapArena ma_head;
 extern size_t SIZE_OF_BLOCK;
 
 extern void *mm_calloc(size_t, size_t);
@@ -55,13 +56,19 @@ static void reset_markers(void) {
     markers[ix] = 0;
 }
 
+static void check_all_arena_heads_are_null(void) {
+  TEST_CHECK(a_head.head == NULL);
+  TEST_CHECK(a_head.tail == NULL);
+  TEST_CHECK(ma_head.head == NULL);
+  TEST_CHECK(ma_head.tail == NULL);
+}
+
 static void pre_test_sanity(void) {
   reset_markers();
 
   base_total_blocks = _mm_total_blocks();
   base_free_blocks = _mm_free_blocks();
-
-  TEST_CHECK(a_head.head == NULL);
+  check_all_arena_heads_are_null();
   TEST_CHECK(base_total_blocks == 0);
   TEST_CHECK(base_free_blocks == 0);
 }
@@ -78,7 +85,7 @@ static void post_test_sanity(void) {
   TEST_MSG("free block mismatch: %zu -> %zu", base_free_blocks,
            _mm_free_blocks());
 
-  TEST_CHECK(a_head.head == NULL);
+  check_all_arena_heads_are_null();
 }
 
 static inline int is_aligned(void *p) {
@@ -518,8 +525,6 @@ static void test_realloc_grow_and_shrink(void) {
   LOG("\tafter shrinking realloc with %lu ===\n", re_shrink_n);
   // this should free the whole thing, since it will fuse bk and fw
   ensuring_free(r);
-  TEST_ASSERT(a_head.head == NULL);
-  TEST_ASSERT(a_head.tail == NULL);
 }
 
 static void test_realloc_with_size_zero(void) {
@@ -608,6 +613,56 @@ static void test_bin_repositioning_trick(void) {
   }
 }
 
+#define MMAP_SIZE(n) (MIN_CAP_FOR_MMAP + n)
+
+static void test_mremap(void) {
+  LOG("=== %s: start ===\n", __func__);
+
+  const size_t n = MMAP_SIZE(1);
+  char *p = (char *)ensuring_malloc(n);
+  TEST_CHECK(p);
+  for (size_t i = 0; i < n; i++)
+    p[i] = (char)(i % 128);
+
+  MM_ASSERT_MARKER(BY_MMAPPING, 1);
+  MM_RESET_MARKER(BY_MMAPPING);
+  MM_RESET_MARKER(MALLOC_CALLED);
+
+  LOG("\tpost-malloc with size %lu and setting values for data ===\n", n);
+
+  const size_t re_grow_n = MMAP_SIZE(100);
+  char *q = (char *)ensuring_realloc(p, re_grow_n);
+  TEST_ASSERT_(p != q, "returned mremapped pointer must be different");
+
+  MM_ASSERT_MARKER(MMAPPED_BIGGER, 1);
+  MM_ASSERT_MARKER(MALLOC_CALLED, 0);
+  MM_ASSERT_MARKER(FREE_CALLED, 0);
+  TEST_ASSERT(q != NULL);
+
+  for (size_t i = 0; i < n; i++) {
+    TEST_CHECK_(q[i] == (char)(i % 128), "[%lu] exp: '%c' != got: '%c'", i,
+                (char)(i % 128), q[i]);
+  }
+
+  for (size_t i = n; i < re_grow_n; i++) {
+    q[i] = (char)(i % 128);
+  }
+  LOG("\tafter growing mremap with %lu ===\n", re_grow_n);
+
+  const size_t re_shrink_n = MMAP_SIZE(5);
+  char *r = (char *)REALLOC_UNDER_TESTING(q, re_shrink_n);
+  MM_ASSERT_MARKER(MUNMAPPED_EXCESS, 1);
+  MM_ASSERT_MARKER(MALLOC_CALLED, 0);
+  MM_ASSERT_MARKER(FREE_CALLED, 0);
+  TEST_ASSERT(r != NULL);
+  for (size_t i = 0; i < re_shrink_n; i++)
+    TEST_CHECK_(r[i] == (char)(i % 128), "[%lu] exp: '%c' != got: '%c'", i,
+                (char)(i % 128), r[i]);
+
+  LOG("\tafter shrinking mremap with %lu ===\n", re_shrink_n);
+  ensuring_free(r);
+}
+
 TEST_LIST = {
     {"test_align", test_align},
     {"test_true_size", test_true_size},
@@ -634,5 +689,6 @@ TEST_LIST = {
     {"test_bin_macros", test_bin_macros},
     {"test_mark_unmark_binmap", test_mark_unmark_binmap},
     {"test_bin_repositioning_trick", test_bin_repositioning_trick},
+    {"test_mremap", test_mremap},
     {NULL, NULL}};
 #endif

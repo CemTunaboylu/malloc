@@ -19,44 +19,38 @@ typedef union {
 } aligned_test_buffer_t;
 
 static aligned_test_buffer_t underlying_test_buffer = {0};
-static intptr_t current_brk = 0;
-static unsigned char *const buf_start_sbrk = underlying_test_buffer.buf;
-static unsigned char *const buf_end_sbrk =
+static unsigned char *const sbrk_lo = underlying_test_buffer.buf;
+static unsigned char *const sbrk_hi =
     underlying_test_buffer.buf + SBRK_REGION_SIZE;
+static unsigned char *brk_curr = underlying_test_buffer.buf;
 
 static int is_addr_in_sbrk_buffer(void *addr) {
   unsigned char *p = (unsigned char *)addr;
-  return (p >= buf_start_sbrk) && (p <= buf_end_sbrk);
+  return (p >= sbrk_lo) && (p <= sbrk_hi);
 }
 
-// will grow backwards
-static intptr_t mmap_brk;
-
-__attribute__((constructor)) void init_mmap_brk(void) {
-  mmap_brk = BUFFER_SIZE;
-}
-static unsigned char *const buf_start_mmap =
-    underlying_test_buffer.buf + SBRK_REGION_SIZE + 16;
-static unsigned char *const buf_end_mmap =
-    underlying_test_buffer.buf + BUFFER_SIZE;
+static unsigned char *const mmap_lo =
+    underlying_test_buffer.buf + SBRK_REGION_SIZE;
+static unsigned char *const mmap_hi = underlying_test_buffer.buf + BUFFER_SIZE;
+static unsigned char *mmap_curr = mmap_hi;
 
 static int is_addr_in_mmap_buffer(void *addr) {
   unsigned char *p = (unsigned char *)addr;
-  return (p >= buf_start_mmap) && (p <= buf_end_mmap);
+  return (p >= mmap_lo) && (p <= mmap_hi);
 }
 
 void *mm_sbrk(intptr_t inc) {
   if (inc == 0) {
-    return buf_start_sbrk + current_brk;
+    return brk_curr;
   }
 
-  intptr_t new_brk = current_brk + inc;
+  unsigned char *new_brk = brk_curr + inc;
 
-  if (new_brk < 0 || new_brk > BUFFER_SIZE) {
+  if (!is_addr_in_sbrk_buffer(new_brk)) {
     return (void *)(-1);
   }
-  unsigned char *old_brk = buf_start_sbrk + current_brk;
-  current_brk = new_brk;
+  unsigned char *old_brk = brk_curr;
+  brk_curr = new_brk;
   return (void *)old_brk;
 }
 
@@ -64,32 +58,74 @@ int mm_brk(void *addr) {
   if (!is_addr_in_sbrk_buffer(addr)) {
     return -1;
   }
-  current_brk = (unsigned char *)addr - buf_start_sbrk;
+  brk_curr = (unsigned char *)addr;
   return 0;
 }
+
 // there is a threshold for mmap, the chunk must be larger so that we can mimick
 // it
 void *mm_mmap(size_t n) {
-  intptr_t new_brk = mmap_brk - n;
-
-  if (new_brk <= SBRK_REGION_SIZE || new_brk > BUFFER_SIZE) {
+  if (n == 0) {
     return (void *)(-1);
   }
-  mmap_brk -= n;
-  unsigned char *p = buf_end_mmap - mmap_brk;
-  return (void *)p;
+
+  if (mmap_curr - n < mmap_lo) {
+    // No space left in fake mmap region
+    return (void *)(-1);
+  }
+
+  // grow backwards
+  mmap_curr -= n;
+  // mapping is [mmap_curr, mmap_curr + n)
+  return (void *)mmap_curr;
+}
+
+void *mm_mremap(void *old_p, size_t old_size, size_t new_size) {
+  if (new_size == old_size) {
+    return old_p;
+  }
+
+  // Shrink in place: trivial
+  if (new_size < old_size) {
+    return old_p;
+  }
+
+  // Grow: simplest semantics — always move, never in-place.
+  void *new_p = mm_mmap(new_size);
+  if (new_p == (void *)(-1)) {
+    return (void *)(-1);
+  }
+
+  // Copy the old region into the new one
+  unsigned char *old_base = (unsigned char *)old_p;
+  unsigned char *new_base = (unsigned char *)new_p;
+  for (size_t i = 0; i < old_size; ++i) {
+    new_base[i] = old_base[i];
+  }
+
+  // We could call mm_munmap(old_p, old_size) or just "leak" it.
+  // For tests, leaking is usually fine; or:
+  // (void)mm_munmap(old_p, old_size);
+
+  return new_p;
 }
 
 int mm_munmap(void *p, size_t n) {
+
   if (!is_addr_in_mmap_buffer(p)) {
     return -1;
   }
-  if (((unsigned char *)p + n) >= buf_end_mmap) {
-    return -1;
+
+  unsigned char *addr = (unsigned char *)p;
+  // Only reclaim if this is the topmost chunk
+  if (addr + n == mmap_curr) {
+    mmap_curr += n;
   }
-  mmap_brk += (intptr_t)n;
+
+  // Otherwise we just leak it in the test buffer; that’s okay.
   return 0;
 }
+
 #else
 
 #include <sys/mman.h>
@@ -144,6 +180,10 @@ static const int PRIVATE_AND_ANON = MAP_PRIVATE | MAP_ANONYMOUS;
 
 void *mm_mmap(size_t n) {
   return mmap(0, n, READ_AND_WRITE, PRIVATE_AND_ANON, DEV_ZERO, OFFSET);
+}
+
+void *mm_mremap(void *op, size_t o, size_t n) {
+  return mremap(op, o, n, MREMAP_MAYMOVE);
 }
 int mm_munmap(void *p, size_t n) { return munmap(p, n); }
 

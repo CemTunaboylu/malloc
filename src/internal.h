@@ -27,6 +27,7 @@ extern void _mm_tear_down_allocator(void);
 
 // test probes use a_head, thus we need to make it external
 extern struct Arena a_head;
+extern struct MMapArena ma_head;
 #endif
 
 extern const size_t MAX_ALIGNMENT;
@@ -49,4 +50,5 @@ void *mm_sbrk(intptr_t inc);
 int mm_brk(void *p);
 // if more than one page, use this
 void *mm_mmap(size_t n);
+void *mm_mremap(void *op, size_t o, size_t n);
 int mm_munmap(void *p, size_t n);

@@ -225,7 +225,7 @@ void FREE(void *p) {
       blk->prev->next = blk->next;
     if (blk->next)
       blk->next->prev = blk->prev;
-    int result = mm_munmap((void *)blk, get_true_size(blk) + SIZE_OF_BLOCK);
+    int result = mm_munmap((void *)blk, back);
     if (result == -1) {
       perror("error while munmapping");
       return;
@@ -306,32 +306,49 @@ static inline void *realloc_from_mmap_to_mmap(BlockPtr blk,
   void *p = allocated_memory(blk);
   // We have more than we need, munmap the unneeded part from the end, and
   // return the same pointer. Nothing in the arena linkedlist changes.
-  if (true_size > aligned_size) {
+  size_t full_aligned_size = SIZE_OF_BLOCK + aligned_size;
+  size_t full_old_size = SIZE_OF_BLOCK + true_size;
+
+  struct SBlock mock_blk = {
+      .next = blk->next,
+      .prev = blk->prev,
+  };
+
+  if (true_size >= aligned_size) {
     MM_MARK(MUNMAPPED_EXCESS);
-    size_t to_munmap_size = true_size - aligned_size;
-    void *moved_p = ((char *)p + aligned_size);
-    mm_munmap(moved_p, to_munmap_size);
-    // do not have to re-set the flags since alignment protects their values
-    blk->size -= to_munmap_size;
-    // update the user memory pointer
-    blk->end_of_alloc_mem = end(blk);
+  } else {
+    MM_MARK(MMAPPED_BIGGER);
+  }
+  void *new = mm_mremap((void *)blk, full_old_size, full_aligned_size);
+  if (IS_FAILED_BY_PTR(new)) {
+    perror("mremap failed");
     return p;
   }
-  // Has to mmap a bigger chunk.
-  void *new = MALLOC(aligned_size);
+  size_t flagged_size = blk->size;
+  size_t size_update = aligned_size - true_size;
+  ma_head.total_bytes_allocated += size_update;
+
   BlockPtr new_blk = (BlockPtr)new;
-  deep_copy_user_memory(blk, new_blk);
-  transfer_flags(blk, new_blk);
-  switch_places_in_list(blk, new_blk);
-  // Since this is new memory, arena's head/tail must be updated if necessary
-  if (ma_head.head == blk) {
-    ma_head.head = new_blk;
-  } else if (ma_head.tail == blk) {
-    ma_head.tail = new_blk;
+  if (new_blk == blk) {
+    // do not have to re-set the flags since alignment protects their values
+    new_blk->size += size_update;
+    // update the user memory pointer
+    new_blk->end_of_alloc_mem = end(new_blk);
+  } else {
+    switch_places_in_list(&mock_blk, new_blk);
+    // Since this is new memory, arena's head/tail must be updated if necessary
+    if (ma_head.head == blk) {
+      ma_head.head = new_blk;
+    }
+    if (ma_head.tail == blk) {
+      ma_head.tail = new_blk;
+    }
+    // do not have to re-set the flags since alignment protects their values
+    new_blk->size = flagged_size + size_update;
+    // update the user memory pointer
+    new_blk->end_of_alloc_mem = end(new_blk);
   }
-  MM_MARK(MMAPPED_BIGGER);
-  FREE(p);
-  return new;
+  return allocated_memory(new_blk);
 }
 
 /* static inline void prepend_to_main_arena(BlockPtr b) { */
@@ -421,7 +438,7 @@ void *REALLOC(void *p, size_t size) {
   int to_mmapped = MMAP == new_allocation;
 
   // <from_mmap_or_sbrk><to_mmap_or_sbrk>
-  int from_to = (from_mmapped << 0) | to_mmapped;
+  int from_to = (from_mmapped << 1) | to_mmapped;
 
   switch (from_to) {
   case 0: // 00 : SBRK->SBRK
