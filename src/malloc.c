@@ -377,8 +377,29 @@ static inline void *realloc_from_mmap_to_mmap(BlockPtr blk,
 /*   a_head->tail = b; */
 /* } */
 
-void *realloc_from_sbrk_to_mmap(BlockPtr blk, size_t aligned_size);
-void *realloc_from_mmap_to_sbrk(BlockPtr blk, size_t aligned_size);
+static inline void *realloc_btw_main_and_mmapped(BlockPtr blk,
+                                                 size_t aligned_size) {
+  void *new = MALLOC(aligned_size);
+  if (IS_FAILED_BY_PTR(new))
+    return allocated_memory(blk);
+
+  BlockPtr new_blk = reconstruct_from_user_memory(new);
+  deep_copy_user_memory(blk, new_blk);
+
+  FREE(allocated_memory(blk));
+  return allocated_memory(new_blk);
+}
+
+static inline void *realloc_from_sbrk_to_mmap(BlockPtr blk,
+                                              size_t aligned_size) {
+  MM_MARK(SBRK_TO_MMAP);
+  return realloc_btw_main_and_mmapped(blk, aligned_size);
+}
+static inline void *realloc_from_mmap_to_sbrk(BlockPtr blk,
+                                              size_t aligned_size) {
+  MM_MARK(MMAP_TO_SBRK);
+  return realloc_btw_main_and_mmapped(blk, aligned_size);
+}
 
 void *realloc_from_sbrk_to_sbrk(BlockPtr blk, size_t aligned_size) {
   // try to grow in-place
@@ -410,7 +431,6 @@ void *realloc_from_sbrk_to_sbrk(BlockPtr blk, size_t aligned_size) {
   return p;
 }
 
-// TODO: if mmaped, what to do?
 void *REALLOC(void *p, size_t size) {
   MM_MARK(REALLOC_CALLED);
   // if we don't have anywhere to realloc, it is effectively a malloc
@@ -425,7 +445,6 @@ void *REALLOC(void *p, size_t size) {
   if (blk == NULL)
     return NULL;
 
-  // the block must be aligned
   size = align_up_fundamental(size);
 
   size_t true_size = get_true_size(blk);
@@ -437,18 +456,16 @@ void *REALLOC(void *p, size_t size) {
   int from_mmapped = is_mmapped(blk);
   int to_mmapped = MMAP == new_allocation;
 
-  // <from_mmap_or_sbrk><to_mmap_or_sbrk>
+  // <is currently mmapped><will be mapped>
   int from_to = (from_mmapped << 1) | to_mmapped;
 
   switch (from_to) {
   case 0: // 00 : SBRK->SBRK
     return realloc_from_sbrk_to_sbrk(blk, size);
   case 1: // 01 : SBRK->MMAP
-    debug_write_str("sbrk to mmap is not implemented yet");
-    break;
+    return realloc_from_sbrk_to_mmap(blk, size);
   case 2: // 10 : MMAP->SBRK
-    debug_write_str("mmap to sbrk is not implemented yet");
-    break;
+    return realloc_from_mmap_to_sbrk(blk, size);
   case 3: // 11 : MMAP->MMAP
     return realloc_from_mmap_to_mmap(blk, size);
   default:

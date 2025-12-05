@@ -625,6 +625,7 @@ static void test_mremap(void) {
     p[i] = (char)(i % 128);
 
   MM_ASSERT_MARKER(BY_MMAPPING, 1);
+  MM_ASSERT_MARKER(BY_SBRKING, 0);
   MM_RESET_MARKER(BY_MMAPPING);
   MM_RESET_MARKER(MALLOC_CALLED);
 
@@ -663,6 +664,86 @@ static void test_mremap(void) {
   ensuring_free(r);
 }
 
+static void test_realloc_from_main_to_mmapped(void) {
+  LOG("=== %s: start ===\n", __func__);
+
+  const size_t n = 5;
+  char *p = (char *)ensuring_malloc(n);
+  TEST_CHECK(p);
+  for (size_t i = 0; i < n; i++)
+    p[i] = (char)(i % 128);
+
+  MM_ASSERT_MARKER(BY_MMAPPING, 0);
+  MM_ASSERT_MARKER(BY_SBRKING, 1);
+  MM_RESET_MARKER(BY_SBRKING);
+  MM_RESET_MARKER(MALLOC_CALLED);
+
+  LOG("\tpost-malloc with size %lu and setting values for data ===\n", n);
+
+  const size_t re_grow_n = MMAP_SIZE(5);
+  char *q = (char *)ensuring_realloc(p, re_grow_n);
+  TEST_ASSERT(q != NULL);
+  TEST_ASSERT_(p != q, "returned mremapped pointer must be different");
+
+  MM_ASSERT_MARKER(SBRK_TO_MMAP, 1);
+  MM_ASSERT_MARKER(MMAPPED_BIGGER, 0);
+  MM_ASSERT_MARKER(MUNMAPPED_EXCESS, 0);
+  MM_ASSERT_MARKER(MALLOC_CALLED, 1);
+  MM_ASSERT_MARKER(BY_MMAPPING, 1);
+  MM_ASSERT_MARKER(BY_SBRKING, 0);
+  MM_RESET_MARKER(BY_MMAPPING);
+  MM_ASSERT_MARKER(FREE_CALLED, 1);
+  ensure_freed();
+  MM_RESET_MARKER(FREE_CALLED);
+
+  for (size_t i = 0; i < n; i++) {
+    TEST_CHECK_(q[i] == (char)(i % 128), "[%lu] exp: '%c' != got: '%c'", i,
+                (char)(i % 128), q[i]);
+  }
+
+  ensuring_free(q);
+}
+
+static void test_realloc_from_mmapped_to_main(void) {
+  LOG("=== %s: start ===\n", __func__);
+
+  const size_t n = MMAP_SIZE(5);
+  char *p = (char *)ensuring_malloc(n);
+  TEST_CHECK(p);
+  for (size_t i = 0; i < n; i++)
+    p[i] = (char)(i % 128);
+
+  MM_ASSERT_MARKER(BY_MMAPPING, 1);
+  MM_ASSERT_MARKER(BY_SBRKING, 0);
+  MM_RESET_MARKER(BY_MMAPPING);
+  MM_RESET_MARKER(MALLOC_CALLED);
+
+  LOG("\tpost-malloc with size %lu and setting values for data ===\n", n);
+
+  const size_t re_grow_n = 5;
+  char *q = (char *)ensuring_realloc(p, re_grow_n);
+  TEST_ASSERT(q != NULL);
+  TEST_ASSERT_(p != q, "returned mremapped pointer must be different");
+
+  MM_ASSERT_MARKER(MMAP_TO_SBRK, 1);
+  MM_ASSERT_MARKER(MMAPPED_BIGGER, 0);
+  MM_ASSERT_MARKER(MUNMAPPED_EXCESS, 0);
+  MM_ASSERT_MARKER(MALLOC_CALLED, 1);
+  MM_ASSERT_MARKER(BY_MMAPPING, 0);
+  MM_ASSERT_MARKER(BY_SBRKING, 1);
+  MM_RESET_MARKER(BY_SBRKING);
+  MM_ASSERT_MARKER(FREE_CALLED, 1);
+  ensure_freed();
+  MM_RESET_MARKER(FREE_CALLED);
+
+  for (size_t i = 0; i < re_grow_n; i++) {
+    TEST_CHECK_(q[i] == (char)(i % 128), "[%lu] exp: '%c' != got: '%c'", i,
+                (char)(i % 128), q[i]);
+  }
+
+  ensuring_free(q);
+}
+
 TEST_LIST = {
     {"test_align", test_align},
     {"test_true_size", test_true_size},
@@ -690,5 +771,7 @@ TEST_LIST = {
     {"test_mark_unmark_binmap", test_mark_unmark_binmap},
     {"test_bin_repositioning_trick", test_bin_repositioning_trick},
     {"test_mremap", test_mremap},
+    {"test_realloc_from_main_to_mmapped", test_realloc_from_main_to_mmapped},
+    {"test_realloc_from_mmapped_to_main", test_realloc_from_mmapped_to_main},
     {NULL, NULL}};
 #endif

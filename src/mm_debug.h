@@ -14,6 +14,9 @@
 #define MMAPPED_BIGGER 11
 #define BY_MMAPPING 12
 #define BY_SBRKING 13
+#define SBRK_TO_MMAP 14
+#define MMAP_TO_SBRK 15
+#define END_MARKERS 16
 
 #ifdef TESTING
 #include <internal.h>
@@ -62,7 +65,7 @@ static inline void mm_fatal(const char *msg) {
     } while (0);                                                               \
   }
 
-#define NUM_MARKERS 14
+#define NUM_MARKERS END_MARKERS
 extern size_t markers[NUM_MARKERS];
 
 #define MM_MARK(ix) markers[ix] += 1
