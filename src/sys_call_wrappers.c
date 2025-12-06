@@ -8,6 +8,7 @@
 #include <arena.h>
 #include <internal.h>
 #include <stddef.h>
+#include <string.h>
 
 #define SBRK_REGION_SIZE 65536
 #define MMAP_REGION_SIZE (MIN_CAP_FOR_MMAP * 8)
@@ -99,6 +100,10 @@ void *mm_mremap(void *old_p, size_t old_size, size_t new_size) {
   // Copy the old region into the new one
   unsigned char *old_base = (unsigned char *)old_p;
   unsigned char *new_base = (unsigned char *)new_p;
+
+  // to handle overlapping memory regions
+  memmove(new_base, old_base, old_size);
+
   for (size_t i = 0; i < old_size; ++i) {
     new_base[i] = old_base[i];
   }

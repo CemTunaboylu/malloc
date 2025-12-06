@@ -2,6 +2,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <string.h>
 #include <sys/types.h>
 
 #include "block.h"
@@ -94,11 +95,7 @@ void deep_copy_user_memory(BlockPtr src, BlockPtr to) {
   size_t to_size = get_true_size(to);
 
   size_t min = src_size < to_size ? src_size : to_size;
-  // hopefully the compiler will vectorize this loop, unroll it and use wider
-  // loads/stores internally to optimize
-  for (size_t i = 0; i < min; i++) {
-    to_user_mem[i] = src_user_mem[i];
-  }
+  memmove(to_user_mem, src_user_mem, min);
 }
 
 /* ----- fusion ----- */
