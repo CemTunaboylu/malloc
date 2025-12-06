@@ -771,6 +771,20 @@ static void test_bare_bin_index(void) {
     TEST_ASSERT_(bare_bin_idx == exp, "[large bin] idx: %lu != %lu",
                  bare_bin_idx, exp);
   }
+
+  TEST_ASSERT_(!CAN_BE_FAST_BINNED(FAST_BIN_SIZE_START - ALIGNMENT),
+               "too small for fast bin failed %lu",
+               FAST_BIN_SIZE_START - ALIGNMENT);
+  TEST_ASSERT_(!CAN_BE_FAST_BINNED(FAST_BIN_SIZE_CAP + ALIGNMENT),
+               "too big for fast bin failed %lu",
+               FAST_BIN_SIZE_CAP + ALIGNMENT);
+
+  for (size_t ix = 0; ix < NUM_LARGE_BINS; ix++) {
+    size_t real = FAST_BIN_SIZE_START + ix * FAST_BIN_STEP;
+    size_t fast_bin_idx = GET_FAST_BIN_IDX(real);
+    TEST_ASSERT_(fast_bin_idx == ix, "[fast bin] idx: %lu != %lu", fast_bin_idx,
+                 ix);
+  }
 }
 
 TEST_LIST = {

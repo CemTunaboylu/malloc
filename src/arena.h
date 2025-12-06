@@ -78,6 +78,11 @@ extern const size_t MAX_ALIGNMENT;
        ? (aligned_req_size / SMALL_BIN_STEP)                                   \
        : LARGE_BIN_IDX_SHIFT(GET_LARGE_BIN_IDX(aligned_req_size)))
 
+#define CAN_BE_FAST_BINNED(aligned_req_size)                                   \
+  (aligned_req_size >= FAST_BIN_SIZE_START &&                                  \
+   aligned_req_size <= FAST_BIN_SIZE_CAP)
+#define GET_FAST_BIN_IDX(aligned_req_size)                                     \
+  (aligned_req_size / FAST_BIN_STEP - 1)
 // Note: thread-safety is not a concern at the moment,
 // thus we only have 2 arenas: sbrk arena and mmap arena.
 struct Arena {
@@ -90,9 +95,14 @@ struct Arena {
    *    where generally SMALL_BIN_SIZE_CAP <= 512
    * large bins:
    *    bins[NUM_SMALL_BINS*2 : NUM_SLOTS_IN_BIN : LARGE_BIN_SIZE_SPACING]
-   *    reversely sorted (desc. order). range of sizes, >
-   * 512 bytes each bin has 2 pointers fw, bk to line up a doubly linkedlist,
-   * thus the multiplication
+   *    sorted (asc. order).
+   * each bin has 2 pointers fw, bk to line up a doubly linkedlist,
+   * thus the multiplication.
+   *
+   * fast bins:
+   *    [FAST_BIN_SIZE_START: FAST_BIN_SIZE_CAP: FAST_BIN_STEP]
+   *    Singly linked list.
+   *
    */
   BlockPtr bins[NUM_SLOTS_IN_BIN];
   // If a bin is empty, the bit that the corresponds to the index of that bin is
@@ -100,7 +110,7 @@ struct Arena {
   // a type that can  support it we "dynamically" arrange an array if we need
   // more than one.
   MAP_ELMNT_TYPE binmap[NUM_ELMNTS_NECESSARY_TO_MAP];
-  // range of [FAST_BIN_SIZE_START : FAST_BIN_SIZE_CAP : MIN_ALIGNMENT] bytes,
+  // range of [FAST_BIN_SIZE_START : FAST_BIN_SIZE_CAP : ALIGNMENT] bytes,
   // no 2 contiguous chunks are fusied.
   BlockPtr fastbins[NUM_FAST_BINS];
   size_t total_bytes_allocated;
