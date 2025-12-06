@@ -52,7 +52,7 @@ static
                            .tail = NULL,
                            .bins = {NULL},
                            .binmap = {0},
-                           .fastbin = {NULL},
+                           .fastbins = {NULL},
                            .total_bytes_allocated = 0,
                            .total_free_bytes = 0};
 

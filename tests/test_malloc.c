@@ -744,6 +744,35 @@ static void test_realloc_from_mmapped_to_main(void) {
   ensuring_free(q);
 }
 
+static void test_bare_bin_index(void) {
+  for (size_t ix = 0; ix < NUM_SMALL_BINS; ix++) {
+    size_t real = SMALL_BIN_SIZE_START + (ix * SMALL_BIN_STEP);
+    size_t bare_bin_idx = GET_BARE_BIN_IDX(real);
+    size_t exp = ix + 1;
+    TEST_ASSERT_(bare_bin_idx == exp, "[small bin] idx: %lu != %lu",
+                 bare_bin_idx, exp);
+  }
+
+  TEST_ASSERT_(GET_BARE_BIN_IDX(SMALL_BIN_SIZE_CAP + ALIGNMENT) ==
+                   LARGE_BIN_IDX_SHIFT(0),
+               "large bin first size fails %lu != %lu",
+               GET_BARE_BIN_IDX(SMALL_BIN_SIZE_CAP + ALIGNMENT),
+               LARGE_BIN_IDX_SHIFT(0));
+  TEST_ASSERT_(GET_BARE_BIN_IDX(LARGE_BIN_SIZE_START + LARGE_BIN_STEP -
+                                ALIGNMENT) == LARGE_BIN_IDX_SHIFT(0),
+               "large bin first size fails, %lu != %lu",
+               GET_BARE_BIN_IDX(LARGE_BIN_SIZE_START - ALIGNMENT),
+               LARGE_BIN_IDX_SHIFT(0));
+
+  for (size_t ix = 1; ix <= NUM_LARGE_BINS; ix++) {
+    size_t real = LARGE_BIN_SIZE_START + ix * LARGE_BIN_STEP;
+    size_t bare_bin_idx = GET_BARE_BIN_IDX(real);
+    size_t exp = LARGE_BIN_IDX_SHIFT(ix);
+    TEST_ASSERT_(bare_bin_idx == exp, "[large bin] idx: %lu != %lu",
+                 bare_bin_idx, exp);
+  }
+}
+
 TEST_LIST = {
     {"test_align", test_align},
     {"test_true_size", test_true_size},
@@ -773,5 +802,6 @@ TEST_LIST = {
     {"test_mremap", test_mremap},
     {"test_realloc_from_main_to_mmapped", test_realloc_from_main_to_mmapped},
     {"test_realloc_from_mmapped_to_main", test_realloc_from_mmapped_to_main},
+    {"test_bare_bin_index", test_bare_bin_index},
     {NULL, NULL}};
 #endif
