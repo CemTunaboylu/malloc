@@ -62,7 +62,6 @@ static
     struct MMapArena ma_head = {.head = NULL,
                                 .tail = NULL,
                                 .total_bytes_allocated = 0,
-                                .total_free_bytes = 0,
                                 .num_mmapped_regions = 0};
 
 __attribute__((constructor)) void init_main_arena_bins(void) {

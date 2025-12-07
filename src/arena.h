@@ -121,7 +121,7 @@ struct MMapArena {
   BlockPtr head;
   BlockPtr tail;
   size_t total_bytes_allocated;
-  size_t total_free_bytes;
+  size_t num_mmapped_regions;
 };
 
 BlockPtr get_block_from_main_arena(ArenaPtr, void *);
