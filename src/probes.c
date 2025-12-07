@@ -24,8 +24,10 @@ static int pred_true(BlockPtr b) {
 
 // Count blocks that satisfy a given predicate.
 size_t _mm_blocks(int (*predicate)(BlockPtr)) {
+  if (a_head.head == NULL)
+    return 0;
   size_t c = 0;
-  for (BlockPtr b = a_head.head; b; b = b->next) {
+  for (BlockPtr b = a_head.head; !is_at_brk(b); b = next(b)) {
     if (predicate(b))
       c++;
   }
@@ -37,7 +39,9 @@ size_t _mm_non_free_blocks(void) { return _mm_blocks(pred_is_used); }
 size_t _mm_total_blocks(void) { return _mm_blocks(pred_true); }
 
 void _mm_tear_down_allocator(void) {
-  for (BlockPtr b = a_head.head; b; b = b->next) {
+  if (a_head.head == NULL)
+    return;
+  for (BlockPtr b = a_head.head; !is_at_brk(b); b = next(b)) {
     free(b);
   }
 }

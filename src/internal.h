@@ -30,6 +30,8 @@ extern struct Arena a_head;
 extern struct MMapArena ma_head;
 #endif
 
+#define CURRENT_BRK mm_sbrk(0)
+
 extern const size_t MAX_ALIGNMENT;
 extern size_t NUM_BITS_SPARED_FROM_ALIGNMENT;
 

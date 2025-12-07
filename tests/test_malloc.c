@@ -65,6 +65,7 @@ static void check_all_arena_heads_are_null(void) {
 
 static void pre_test_sanity(void) {
   reset_markers();
+  LOG("\t pre_test_sanity \n");
 
   base_total_blocks = _mm_total_blocks();
   base_free_blocks = _mm_free_blocks();
@@ -74,6 +75,8 @@ static void pre_test_sanity(void) {
 }
 
 static void post_test_sanity(void) {
+  LOG("\t post_test_sanity \n");
+  check_all_arena_heads_are_null();
   // No new permanent blocks, anything allocated during the tests are new
   // extended blocks, they will be released at the end of each test because they
   // will be fused
@@ -94,9 +97,9 @@ static inline int is_aligned(void *p) {
 
 void check_block_header_shape(BlockPtr head) {
   TEST_CHECK(sizeof(head->size) == 8);
+  TEST_CHECK(sizeof(head) == 8);
   TEST_CHECK(sizeof(head->next) == 8);
   TEST_CHECK(sizeof(head->prev) == 8);
-  TEST_CHECK(sizeof(head->end_of_alloc_mem) == 8);
   TEST_CHECK(is_aligned(head));
 }
 
@@ -300,6 +303,10 @@ static void test_forward_fusion_2_blocks(void) {
     ptrs[i] = p;
   }
 
+  for (size_t i = 1; i < num_blocks; i++) {
+    TEST_CHECK(ptrs[i] != ptrs[i - 1]);
+  }
+
   LOG("\tpost-malloc ===\n");
 
   for (size_t i = 0; i < num_blocks - 1; i++) {
@@ -342,6 +349,10 @@ static void test_backward_fusion_2_blocks(void) {
     ptrs[i] = p;
   }
 
+  for (size_t i = 1; i < n; i++) {
+    TEST_CHECK(ptrs[i] != ptrs[i - 1]);
+  }
+
   LOG("\tpost-malloc ===\n");
 
   for (size_t i = 0; i < n - 1; i++) {
@@ -373,7 +384,7 @@ static void test_backward_fusion_2_blocks(void) {
 static void test_free_no_release_or_fusion(void) {
   LOG("=== %s: start ===\n", __func__);
 
-  const size_t n = 3;
+  const size_t n = 5;
   void *ptrs[n];
   size_t base_bytes = 30;
 
@@ -381,6 +392,10 @@ static void test_free_no_release_or_fusion(void) {
     void *p = ensuring_malloc(base_bytes);
     TEST_CHECK(p != NULL);
     ptrs[i] = p;
+  }
+
+  for (size_t i = 1; i < n; i++) {
+    TEST_CHECK(ptrs[i] != ptrs[i - 1]);
   }
 
   LOG("\tpost-malloc ===\n");
@@ -417,6 +432,10 @@ static void test_free_with_fusion_no_release(void) {
     ptrs[i] = p;
   }
 
+  for (size_t i = 1; i < n; i++) {
+    TEST_CHECK(ptrs[i] != ptrs[i - 1]);
+  }
+
   LOG("\tpost-malloc ===\n");
 
   const size_t to_free = n / 2;
@@ -427,13 +446,15 @@ static void test_free_with_fusion_no_release(void) {
     void *p = ptrs[i];
     BlockPtr blk = reconstruct_from_user_memory(p);
     mark_as_free(blk);
+    TEST_ASSERT_(get_true_size(blk) == *((size_t *)next(blk) - 1),
+                 "true size is not put in the footer");
   }
 
   LOG("\tafter artificially freeing blocks ===\n");
 
   void *p = ptrs[to_free];
   BlockPtr blk = reconstruct_from_user_memory(p);
-  BlockPtr after_fusion_head = blk->prev->prev;
+  BlockPtr after_fusion_head = prev(prev(blk));
   TEST_CHECK_(!is_free(blk), "block to free should not have been free");
   ensuring_free(p);
   ensure_fuse_fwd_is_called(1);
@@ -448,8 +469,17 @@ static void test_free_with_fusion_no_release(void) {
   TEST_CHECK_(get_true_size(after_fusion_head) == total_bytes_after_fusion,
               "size of after_fusion_head should add up to %lu, not %lu",
               total_bytes_after_fusion, get_true_size(after_fusion_head));
+  TEST_ASSERT_(get_true_size(after_fusion_head) ==
+                   *((size_t *)next(after_fusion_head) - 1),
+               "true size is not put in the footer of fusion head");
+  TEST_ASSERT_(is_free(after_fusion_head), "fusion head must have been freed");
+  TEST_ASSERT_(!is_prev_free(after_fusion_head),
+               "fusion head must have prev free false");
 
   void *last = ptrs[n - 1];
+  BlockPtr last_blk = reconstruct_from_user_memory(last);
+  TEST_ASSERT_(!is_free(last_blk), "last block must not be free");
+  TEST_ASSERT_(is_prev_free(last_blk), "last block's prev must be free");
   ensuring_free(last);
 }
 

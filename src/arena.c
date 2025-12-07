@@ -21,10 +21,24 @@ void allocated_bytes_update(size_t *total_bytes_allocated, int update) {
   *total_bytes_allocated = allocated_bytes;
 }
 
+int sbrked_header_validation(BlockPtr cand) {
+  if (is_at_brk(cand))
+    return 0;
+  BlockPtr fw = next(cand);
+  if (!is_at_brk(fw) && (is_free(cand) != is_prev_free(fw)))
+    return 0;
+  return 1;
+}
+
 BlockPtr reconstruct_valid_header(void *p) {
   BlockPtr blk = reconstruct_from_user_memory(p);
-  if (!do_ends_hold(blk))
-    return NULL;
+  // TODO: add hardening here
+  if (!is_mmapped(blk)) {
+    if (!sbrked_header_validation(blk))
+      return NULL;
+  } else {
+    // TODO: mmapped validation
+  }
   if (p != (void *)allocated_memory(blk)) {
     blk = NULL;
   }
@@ -38,7 +52,7 @@ BlockPtr get_block_from_mmapped_arena(MMapArenaPtr ar_ptr, void *p) {
 
   int possibly_a_valid_chunk = 0;
   do {
-    if (((void *)b < p) || ((void *)b->end_of_alloc_mem) > p) {
+    if (((void *)b < p) || ((void *)(b)) > p) {
       possibly_a_valid_chunk = 1;
       break;
     }

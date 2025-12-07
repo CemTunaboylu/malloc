@@ -16,7 +16,9 @@
 #define BY_SBRKING 13
 #define SBRK_TO_MMAP 14
 #define MMAP_TO_SBRK 15
-#define END_MARKERS 16
+#define NEXT_PREV_FREED 16
+#define NEXT_PREV_USED 17
+#define END_MARKERS 18
 
 #ifdef TESTING
 #include <internal.h>

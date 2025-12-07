@@ -33,6 +33,20 @@ size_t get_true_size(BlockPtr b) {
   return (b->size & LSB_ENCODABLE_ERASURE_MASK);
 }
 
+static inline size_t *get_footer_of(BlockPtr b) {
+  size_t *fw = (size_t *)next(b);
+  return fw - 1;
+}
+
+// Assuming we know that the previous block is free
+size_t prev_size(BlockPtr b) { return *((size_t *)b - 1); }
+
+// Assuming we know that the previous block is free
+BlockPtr prev(BlockPtr b) {
+  int p_size = (int)prev_size(b);
+  return (BlockPtr)((char *)b - (p_size + (int)SIZE_OF_BLOCK));
+}
+
 #define SET 1
 #define UNSET 0
 
@@ -54,9 +68,47 @@ void mark_as_mmapped(BlockPtr b) { encode(b, MMAPPED, SET); }
 
 int is_free(BlockPtr b) { return (b->size & (size_t)FREE) > 0; }
 
-void mark_as_free(BlockPtr b) { encode(b, FREE, SET); }
+int is_prev_free(BlockPtr b) { return (b->size & (size_t)PREV_FREE) > 0; }
 
-void mark_as_used(BlockPtr b) { encode(b, FREE, UNSET); }
+static inline void put_size_in_footer(BlockPtr b) {
+  size_t *footer = get_footer_of(b);
+  *footer = get_true_size(b);
+}
+
+static inline void mark_prev_as_free(BlockPtr b) { encode(b, PREV_FREE, SET); }
+
+static inline void mark_prev_as_used(BlockPtr b) {
+  encode(b, PREV_FREE, UNSET);
+}
+
+void propagate_free_to_next(BlockPtr b) {
+  put_size_in_footer(b);
+
+  BlockPtr nxt = next(b);
+  if (!is_at_brk(nxt)) {
+    mark_prev_as_free(nxt);
+  }
+}
+
+void propagate_used_to_next(BlockPtr b) {
+  BlockPtr nxt = next(b);
+  if (!is_at_brk(nxt)) {
+    mark_prev_as_used(nxt);
+  }
+}
+
+void mark_as_free(BlockPtr b) {
+  encode(b, FREE, SET);
+  propagate_free_to_next(b);
+}
+
+void mark_as_used(BlockPtr b) {
+  encode(b, FREE, UNSET);
+  BlockPtr nxt = next(b);
+  if (!is_at_brk(nxt)) {
+    mark_prev_as_used(nxt);
+  }
+}
 
 void transfer_flags(BlockPtr from, BlockPtr to) {
   size_t flags = get_flags(from);
@@ -68,11 +120,11 @@ void *allocated_memory(BlockPtr b) {
   return ((void *)e);
 }
 
-void *end(BlockPtr b) {
+void *next(BlockPtr b) {
   return (void *)((char *)allocated_memory(b) + get_true_size(b));
 }
 
-int do_ends_hold(BlockPtr b) { return (end(b) == b->end_of_alloc_mem); }
+int is_at_brk(BlockPtr b) { return (void *)b >= CURRENT_BRK; }
 
 // NOTE: Does not handle head/tail of arenas, those have to be handled within
 // the arena
@@ -101,65 +153,57 @@ void deep_copy_user_memory(BlockPtr src, BlockPtr to) {
 /* ----- fusion ----- */
 
 int fuse_next(BlockPtr b) {
-  if (b->next == NULL) {
+  if (!is_next_fusable(b))
     return -1;
+  BlockPtr nxt = next(b);
+  b->size += SIZE_OF_BLOCK + get_true_size(nxt);
+
+  if (is_free(b)) {
+    propagate_free_to_next(b);
+  } else {
+    propagate_used_to_next(b);
   }
-  BlockPtr next = b->next;
-  if (!is_free(next)) {
-    return -1;
-  }
-  b->size += SIZE_OF_BLOCK + get_true_size(next);
-  b->next = next->next;
-  b->end_of_alloc_mem = end(b);
-  if (next->next)
-    next->next->prev = b;
+
   return 0;
 }
 
 void fuse_fwd(BlockPtr b) {
-  if (!is_free(b)) {
-    return;
-  }
-  if (b->next == NULL || !is_free(b->next)) {
-    return;
-  }
-  BlockPtr cursor = b;
-  do {
-    b->size += SIZE_OF_BLOCK + get_true_size(cursor->next);
-    cursor = cursor->next;
+  while (fuse_next(b) == 0) {
     MM_MARK(FUSE_FWD_CALLED);
-  } while (cursor->next && is_free(cursor->next));
-  b->next = cursor->next;
-  b->end_of_alloc_mem = end(b);
-  if (cursor->next)
-    cursor->next->prev = b;
+  }
 }
 
+// Head always has its prev_free marker unset.
+extern void print_list_into_stderr(void);
+
 void fuse_bwd(BlockPtr *b) {
+  // TODO: cannot assert this, realloc may fuse with a prev block
   if (!is_free(*b)) {
     return;
   }
-  if ((*b)->prev == NULL) {
+  if (!is_prev_free(*b)) {
     return;
   }
   BlockPtr cursor = *b;
-  BlockPtr next = (*b)->next;
-  while (cursor->prev && is_free(cursor->prev)) {
-    BlockPtr prev = cursor->prev;
-    prev->size += SIZE_OF_BLOCK + get_true_size(cursor);
-    cursor = prev;
+  do {
+    BlockPtr bk = prev(cursor);
+    bk->size += SIZE_OF_BLOCK + get_true_size(cursor);
+    cursor = bk;
     MM_MARK(FUSE_BWD_CALLED);
-  }
-  cursor->next = next;
-  if (next)
-    next->prev = cursor;
+  } while (is_prev_free(cursor));
+
+  // TODO: cannot assert this , realloc may fuse with a prev block
+  MM_ASSERT(is_free(cursor));
+  if (is_free(cursor))
+    propagate_free_to_next(cursor);
+  else
+    propagate_used_to_next(cursor);
   *b = cursor;
-  (*b)->end_of_alloc_mem = end(*b);
 }
 
 int is_next_fusable(BlockPtr b) {
-  BlockPtr next = b->next;
-  return ((next != NULL) && (is_free(next)));
+  BlockPtr fw = next(b);
+  return (!is_at_brk(fw) && (is_free(fw)));
 }
 
 /* ----- splitting ------ */
@@ -176,17 +220,15 @@ void split_block(BlockPtr b, size_t aligned_size_to_shrink) {
   BlockPtr rem_free =
       (BlockPtr)((char *)allocated_memory(b) + aligned_size_to_shrink);
   rem_free->size = get_true_size(b) - aligned_size_to_shrink - SIZE_OF_BLOCK;
-  rem_free->next = b->next;
-  rem_free->prev = b;
-  if (b->next) {
-    b->next->prev = rem_free;
-  }
   mark_as_free(rem_free);
-  rem_free->end_of_alloc_mem = end(rem_free);
+
   b->size = aligned_size_to_shrink;
-  b->next = rem_free;
   set_flags(b, bs_flags);
-  b->end_of_alloc_mem = end(b);
+
+  if (is_free(b))
+    propagate_free_to_next(b);
+  else
+    propagate_used_to_next(b);
 }
 
 BlockPtr reconstruct_from_user_memory(const void *p) {

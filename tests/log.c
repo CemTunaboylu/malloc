@@ -44,7 +44,7 @@ void print_list_into_test_file(void) {
   BlockPtr head = a_head.head;
   if (head == NULL)
     return;
-  for (BlockPtr b = head; b; b = b->next) {
+  for (BlockPtr b = head; !is_at_brk(b); b = next(b)) {
     debug_write_str_fd(global_test_log_fd, "[ size:");
     debug_write_u64_fd(global_test_log_fd, get_true_size(b));
     debug_write_str_fd(global_test_log_fd, " - free:");

@@ -28,8 +28,6 @@
 #define REALLOC realloc
 #endif
 
-#define CURRENT_BRK mm_sbrk(0)
-
 enum Allocation {
   SBRK,
   MMAP,
@@ -42,6 +40,7 @@ enum Allocation allocation_type_for(size_t aligned_size) {
 void *MALLOC(size_t);
 
 extern size_t SIZE_OF_BLOCK;
+extern int is_at_brk(BlockPtr);
 
 /* ----- arena ----- */
 
@@ -83,7 +82,7 @@ BlockPtr get_block_from_arenas(void *p) {
 
 void correct_tail_if_eaten(BlockPtr blk) {
   int is_tail_eaten =
-      (blk < a_head.tail) && ((void *)a_head.tail < (void *)end(blk));
+      (blk < a_head.tail) && ((void *)a_head.tail < (void *)next(blk));
   if (is_tail_eaten)
     a_head.tail = blk;
 }
@@ -107,9 +106,13 @@ void insert_into_belonging_arena(BlockPtr b, size_t total_bytes_to_allocated,
   }
 
   // if there is a last, append this block there
-  if (*tail) {
-    (*tail)->next = b;
-    b->prev = *tail;
+  if (*tail && is_free(*tail)) {
+    // handles the flag setting etc. internally
+    mark_as_free(*tail);
+    if (is_mmapped(b)) {
+      b->prev = *tail;
+      (*tail)->next = b;
+    }
   }
   *tail = b;
   allocated_bytes_update(allocated_bytes_ptr, total_bytes_to_allocated);
@@ -136,24 +139,35 @@ BlockPtr extend_heap(size_t aligned_size, enum Allocation allocation) {
 
   b = (BlockPtr)requested;
   b->size = aligned_size;
+
   if (allocation == MMAP)
     mark_as_mmapped(b);
-  b->next = NULL;
-  b->prev = NULL;
-  b->end_of_alloc_mem = end(b);
 
+  b->next = b->prev = NULL;
   insert_into_belonging_arena(b, total_bytes_to_allocate, allocation);
+
+  if (allocation == SBRK && a_head.head != b) {
+    if (is_free(a_head.tail)) {
+      BlockPtr bk = prev(b);
+      if (is_free(bk))
+        mark_as_free(bk);
+    }
+  }
 
   return b;
 }
 
-// we don't search on mmapped arenas, if it is freed, we munmap it immediately.
+// We don't search on mmapped arenas, cannot find a free block in it's list
+// because when it is freed, we munmap it immediately.
 BlockPtr first_fit_find(size_t aligned_size) {
+  if (a_head.head == NULL)
+    return NULL;
   BlockPtr curr = a_head.head;
   // as long as we have block at hand, and it's either NOT free or NOT big
   // enough
-  while (curr && !(is_free(curr) && get_true_size(curr) >= aligned_size)) {
-    curr = curr->next;
+  while (!is_at_brk(curr) &&
+         !(is_free(curr) && get_true_size(curr) >= aligned_size)) {
+    curr = next(curr);
   }
   return curr;
 }
@@ -207,10 +221,18 @@ void FREE(void *p) {
     fuse_fwd(blk);
     fuse_bwd(&blk);
     correct_tail_if_eaten(blk);
+    /* mark_as_free(blk); */
   }
 
-  int is_at_tail = (!blk->next);
-  int is_at_head = (!blk->prev);
+  int is_at_tail;
+  int is_at_head;
+  if (is_mmapped(blk)) {
+    is_at_tail = (!blk->next);
+    is_at_head = (!blk->prev);
+  } else {
+    is_at_head = (a_head.head == blk);
+    is_at_tail = (a_head.tail == blk);
+  }
 
   size_t back = SIZE_OF_BLOCK + get_true_size(blk);
   // if it is mmapped, just munmap it
@@ -241,7 +263,7 @@ void FREE(void *p) {
   // TODO:  we must find delegate freeing to which ever arena this chunk is
   // from
   void *old_tail = CURRENT_BRK;
-  BlockPtr prev_of_tail = a_head.tail->prev;
+  BlockPtr prev_of_tail = is_at_head ? NULL : prev(a_head.tail);
   if (mm_sbrk(-back) == (void *)-1) {
     perror("error while releasing the tail");
     return;
@@ -253,18 +275,15 @@ void FREE(void *p) {
   MM_ASSERT(a_head.total_bytes_allocated >= back);
   a_head.tail = prev_of_tail;
   allocated_bytes_update(&(a_head.total_bytes_allocated), -back);
-  if (!is_at_head)
-    a_head.tail->next = NULL;
-  else {
+  if (is_at_head) {
     a_head.head = NULL;
-    a_head.tail = NULL;
   }
 }
 
 static inline void split(BlockPtr blk, size_t aligned_size) {
   split_block(blk, aligned_size);
   if (a_head.tail == blk) {
-    a_head.tail = blk->next;
+    a_head.tail = next(blk);
   }
 }
 
@@ -282,7 +301,7 @@ void *MALLOC(size_t size) {
     blk = extend_heap(aligned_size, allocation);
   } else {
     blk = first_fit_find(aligned_size);
-    if (blk == NULL) {
+    if ((blk == NULL) || is_at_brk(blk)) {
       // if failed nothing to do, if not block is not larger than size
       blk = extend_heap(aligned_size, allocation);
     }
@@ -295,6 +314,7 @@ void *MALLOC(size_t size) {
   if (SBRK == allocation && is_splittable(blk, aligned_size)) {
     split(blk, aligned_size);
   }
+
   mark_as_used(blk);
   return (void *)allocated_memory(blk);
 }
@@ -332,7 +352,6 @@ static inline void *realloc_from_mmap_to_mmap(BlockPtr blk,
     // do not have to re-set the flags since alignment protects their values
     new_blk->size += size_update;
     // update the user memory pointer
-    new_blk->end_of_alloc_mem = end(new_blk);
   } else {
     switch_places_in_list(&mock_blk, new_blk);
     // Since this is new memory, arena's head/tail must be updated if necessary
@@ -344,24 +363,9 @@ static inline void *realloc_from_mmap_to_mmap(BlockPtr blk,
     }
     // do not have to re-set the flags since alignment protects their values
     new_blk->size = flagged_size + size_update;
-    // update the user memory pointer
-    new_blk->end_of_alloc_mem = end(new_blk);
   }
   return allocated_memory(new_blk);
 }
-
-/* static inline void prepend_to_main_arena(BlockPtr b) { */
-/*   // already at the head */
-/*   if (b->prev == NULL) */
-/*     return; */
-/*   // remove b from the middle */
-/*   b->next->prev = b->prev; */
-/*   b->prev->next = b->next; */
-/*   // prepend b to head */
-/*   a_head->head->prev = b; */
-/*   b->next = a_head->head; */
-/*   a_head->head = b; */
-/* } */
 
 /* static inline void append_to_main_arena(BlockPtr b) { */
 /*   // already at the tail */
@@ -403,9 +407,7 @@ static inline void *realloc_from_mmap_to_sbrk(BlockPtr blk,
 void *realloc_from_sbrk_to_sbrk(BlockPtr blk, size_t aligned_size) {
   // try to grow in-place
   // TODO: can grow backwards as well, but will change this anyway
-  while (get_true_size(blk) < aligned_size && is_next_fusable(blk)) {
-    if (fuse_next(blk) == -1)
-      break;
+  while (get_true_size(blk) < aligned_size && fuse_next(blk) != -1) {
   }
   correct_tail_if_eaten(blk);
 

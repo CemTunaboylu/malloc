@@ -16,34 +16,47 @@ typedef struct SBlock *BlockPtr;
 enum LSB_Flag {
   MMAPPED = 0x1,
   FREE = 0x2,
+  PREV_FREE = 0x4,
 };
+
+/* Layout of Block headers
+ *
+ * |  previous' size |      prev. (contiguous) block's size if free right on top
+ * -- block header --
+ * |  flagged size  |       each bit encodes: <prev_free><is_free><mmapped>
+ * |  next block*   |       (within the bin its in) when free
+ * |  prev block*   |       (within the bin its in) when free
+ * |  true size     |       puts (unflagged) size @footer when freed
+ */
 
 struct SBlock {
   size_t __LSB_ENCODED size;
-  // points to end of the allocated user memory to add another check
-  // for reconstructing the block from given pointer
-  void *end_of_alloc_mem;
   BlockPtr next;
   BlockPtr prev;
 };
 
+BlockPtr prev(BlockPtr);
 BlockPtr reconstruct_from_user_memory(const void *);
-int do_ends_hold(BlockPtr);
 int fuse_next(BlockPtr);
+int is_at_brk(BlockPtr);
 int is_free(BlockPtr);
 int is_mmapped(BlockPtr);
 int is_next_fusable(BlockPtr);
+int is_prev_free(BlockPtr);
 int is_splittable(BlockPtr, size_t);
-size_t get_true_size(BlockPtr);
 size_t get_flags(BlockPtr);
+size_t get_true_size(BlockPtr);
+size_t prev_size(BlockPtr);
 void *allocated_memory(BlockPtr);
-void *end(BlockPtr);
+void *next(BlockPtr);
 void deep_copy_user_memory(BlockPtr src, BlockPtr to);
 void fuse_bwd(BlockPtr *);
 void fuse_fwd(BlockPtr);
-void mark_as_free(BlockPtr b);
+void mark_as_free(BlockPtr);
 void mark_as_mmapped(BlockPtr);
-void mark_as_used(BlockPtr b);
+void mark_as_used(BlockPtr);
+void propagate_free_to_next(BlockPtr);
+void propagate_used_to_next(BlockPtr);
 void split_block(BlockPtr, size_t);
 void switch_places_in_list(BlockPtr rem, BlockPtr put);
 void transfer_flags(BlockPtr from, BlockPtr to);
