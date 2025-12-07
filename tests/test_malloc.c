@@ -598,7 +598,7 @@ static void test_mark_unmark_binmap(void) {
 
 static void test_bin_repositioning_trick(void) {
   for (size_t i = 0; i < SLOTS_FOR_BLOCK_OFFSET_ALIGNMENT; i++) {
-    a_head.bins[i] = 0;
+    TEST_ASSERT_(a_head.bins[i] == 0, "block offset must have been null");
   }
 
   BlockPtr bin;
