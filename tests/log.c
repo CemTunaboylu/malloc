@@ -40,18 +40,45 @@ void logf_nonalloc(const char *fmt, ...) {
   debug_write_str_fd(global_test_log_fd, buf);
 }
 
-void print_list_into_test_file(void) {
+static inline void print_blk(int fd, BlockPtr b) {
+  debug_write_str_fd(fd, "[ size:");
+  debug_write_u64_fd(fd, get_true_size(b));
+  debug_write_str_fd(fd, " - free:");
+  debug_write_u64_fd(fd, is_free(b));
+  debug_write_str_fd(fd, " - prev_free:");
+  debug_write_u64_fd(fd, is_prev_free(b));
+  debug_write_str_fd(fd, " - addr:");
+  debug_write_ptr_fd(fd, (void *)b);
+  debug_write_str_fd(fd, "]\n");
+}
+
+static inline void print_arrow(int fd) {
+  debug_write_str_fd(fd, "                |\n");
+  debug_write_str_fd(fd, "                |\n");
+  debug_write_str_fd(fd, "                v\n");
+}
+
+void print_list_into_fd(int fd) {
   BlockPtr head = a_head.head;
   if (head == NULL)
     return;
-  for (BlockPtr b = head; !is_at_brk(b); b = next(b)) {
-    debug_write_str_fd(global_test_log_fd, "[ size:");
-    debug_write_u64_fd(global_test_log_fd, get_true_size(b));
-    debug_write_str_fd(global_test_log_fd, " - free:");
-    debug_write_u64_fd(global_test_log_fd, is_free(b));
-    debug_write_str_fd(global_test_log_fd, "]\n");
+
+  debug_write_str_fd(fd, "\n");
+  print_blk(fd, head);
+
+  BlockPtr b = next(head);
+  for (; !is_at_brk(b); b = next(b)) {
+    print_arrow(fd);
+    print_blk(fd, head);
   }
 }
+
+void print_list_into_stderr(void) {
+  int fd = fileno(stderr);
+  print_list_into_fd(fd);
+}
+
+void print_list_into_test_file(void) { print_list_into_fd(global_test_log_fd); }
 
 #define LOG(...)                                                               \
   do {                                                                         \
@@ -62,4 +89,6 @@ void print_list_into_test_file(void) {
 #define LOG(...)                                                               \
   do {                                                                         \
   } while (0)
+
+void print_list_into_stderr(void) {}
 #endif

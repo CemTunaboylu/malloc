@@ -7,6 +7,7 @@
 
 extern void debug_write_str(const char *);
 extern void debug_write_ptr(const void *);
+extern void print_list_into_stderr(void);
 
 #ifdef TESTING
 // non-allocating writes
