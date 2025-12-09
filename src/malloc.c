@@ -37,7 +37,10 @@ enum Allocation allocation_type_for(size_t aligned_size) {
   return ((aligned_size > MIN_CAP_FOR_MMAP) ? MMAP : SBRK);
 }
 
+void *CALLOC(size_t len, size_t size_of);
+void FREE(void *p);
 void *MALLOC(size_t);
+void *REALLOC(void *p, size_t size);
 
 extern size_t SIZE_OF_BLOCK;
 extern int is_at_brk(BlockPtr);
@@ -72,7 +75,7 @@ __attribute__((constructor)) void init_main_arena_bins(void) {
   }
 }
 
-BlockPtr get_block_from_arenas(void *p) {
+static inline BlockPtr get_block_from_arenas(void *p) {
   BlockPtr bp = get_block_from_main_arena(&a_head, p);
   // try mmap arena
   if (bp == NULL)
@@ -80,15 +83,16 @@ BlockPtr get_block_from_arenas(void *p) {
   return bp;
 }
 
-void correct_tail_if_eaten(BlockPtr blk) {
+static inline void correct_tail_if_eaten(BlockPtr blk) {
   int is_tail_eaten =
       (blk < a_head.tail) && ((void *)a_head.tail < (void *)next(blk));
   if (is_tail_eaten)
     a_head.tail = blk;
 }
 
-void insert_into_belonging_arena(BlockPtr b, size_t total_bytes_to_allocated,
-                                 enum Allocation allocation) {
+static inline void insert_into_belonging_arena(BlockPtr b,
+                                               size_t total_bytes_to_allocated,
+                                               enum Allocation allocation) {
   size_t *allocated_bytes_ptr;
   BlockPtr *tail;
   if (allocation == MMAP) {
@@ -149,8 +153,9 @@ BlockPtr extend_heap(size_t aligned_size, enum Allocation allocation) {
   if (allocation == SBRK && a_head.head != b) {
     if (is_free(a_head.tail)) {
       BlockPtr bk = prev(b);
+      MM_ASSERT(bk == a_head.tail);
       if (is_free(bk))
-        mark_as_free(bk);
+        propagate_free_to_next(bk);
     }
   }
 
@@ -163,8 +168,7 @@ BlockPtr first_fit_find(size_t aligned_size) {
   if (a_head.head == NULL)
     return NULL;
   BlockPtr curr = a_head.head;
-  // as long as we have block at hand, and it's either NOT free or NOT big
-  // enough
+  // while we have block at hand, and it's either NOT free or NOT big enough
   while (!is_at_brk(curr) &&
          !(is_free(curr) && get_true_size(curr) >= aligned_size)) {
     curr = next(curr);
@@ -194,77 +198,47 @@ void *CALLOC(size_t len, size_t size_of) {
   return p;
 }
 
-void FREE(void *p) {
-  if (p == NULL)
-    return;
-  MM_MARK(FREE_CALLED);
-  BlockPtr blk = get_block_from_arenas(p);
-  if (blk == NULL)
-    return;
-
-  // guard for double free
-  if (is_free(blk)) {
-#ifdef TESTING
-    MM_ASSERT(0);
-#else
-    debug_write_str("double free: ");
-    debug_write_ptr(p);
-    debug_write_str("\n");
-#endif
-    return;
-  }
-
-  mark_as_free(blk);
-  MM_MARK(FREED);
-
-  if (!is_mmapped(blk)) {
-    fuse_fwd(blk);
-    fuse_bwd(&blk);
-    correct_tail_if_eaten(blk);
-    /* mark_as_free(blk); */
-  }
-
-  int is_at_tail;
-  int is_at_head;
-  if (is_mmapped(blk)) {
-    is_at_tail = (!blk->next);
-    is_at_head = (!blk->prev);
-  } else {
-    is_at_head = (a_head.head == blk);
-    is_at_tail = (a_head.tail == blk);
-  }
-
+static inline void munmap(BlockPtr blk) {
+  int is_at_tail = (!blk->next);
+  int is_at_head = (!blk->prev);
   size_t back = SIZE_OF_BLOCK + get_true_size(blk);
-  // if it is mmapped, just munmap it
-  if (is_mmapped(blk)) {
-    MM_ASSERT(ma_head.total_bytes_allocated >= back);
-    if (is_at_tail)
-      ma_head.tail = blk->prev;
-    if (is_at_head)
-      ma_head.head = blk->next;
-    if (blk->prev)
-      blk->prev->next = blk->next;
-    if (blk->next)
-      blk->next->prev = blk->prev;
-    int result = mm_munmap((void *)blk, back);
-    if (result == -1) {
-      perror("error while munmapping");
-      return;
-    }
-    MM_MARK(MUNMAPPED);
-    allocated_bytes_update(&(ma_head.total_bytes_allocated), -back);
+
+  MM_ASSERT(ma_head.total_bytes_allocated >= back);
+  if (is_at_tail)
+    ma_head.tail = blk->prev;
+  if (is_at_head)
+    ma_head.head = blk->next;
+  if (blk->prev)
+    blk->prev->next = blk->next;
+  if (blk->next)
+    blk->next->prev = blk->prev;
+  int result = mm_munmap((void *)blk, back);
+  if (result == -1) {
+    perror("error while munmapping");
     return;
   }
+  MM_MARK(MUNMAPPED);
+  allocated_bytes_update(&(ma_head.total_bytes_allocated), -back);
+}
+
+static inline void release_sbrked(BlockPtr blk) {
+  fuse_fwd(blk);
+  fuse_bwd(&blk);
+  correct_tail_if_eaten(blk);
+  size_t back = SIZE_OF_BLOCK + get_true_size(blk);
+
+  int is_at_head = (a_head.head == blk);
+  int is_at_tail = (a_head.tail == blk);
 
   if (!is_at_tail) {
     return;
   }
 
-  // TODO:  we must find delegate freeing to which ever arena this chunk is
-  // from
   void *old_tail = CURRENT_BRK;
+  MM_ASSERT((BlockPtr)old_tail == next(a_head.tail));
   BlockPtr prev_of_tail = is_at_head ? NULL : prev(a_head.tail);
-  if (mm_sbrk(-back) == (void *)-1) {
+
+  if (IS_FAILED_BY_PTR(mm_sbrk(-back))) {
     perror("error while releasing the tail");
     return;
   }
@@ -273,11 +247,50 @@ void FREE(void *p) {
   MM_ASSERT((char *)old_tail > (char *)CURRENT_BRK);
   MM_MARK(RELEASED);
   MM_ASSERT(a_head.total_bytes_allocated >= back);
+
   a_head.tail = prev_of_tail;
   allocated_bytes_update(&(a_head.total_bytes_allocated), -back);
   if (is_at_head) {
     a_head.head = NULL;
   }
+}
+
+static inline int is_double_free(BlockPtr blk) {
+  if (!is_free(blk))
+    return 0;
+#ifdef TESTING
+  MM_ASSERT(0);
+#else
+  debug_write_str("double free: ");
+  debug_write_ptr(p);
+  debug_write_str("\n");
+#endif
+  return 1;
+}
+
+void FREE(void *p) {
+  if (p == NULL)
+    return;
+  MM_MARK(FREE_CALLED);
+
+  BlockPtr blk = get_block_from_arenas(p);
+  if (blk == NULL)
+    return;
+
+  // guard for double free
+  if (is_double_free(blk))
+    return;
+
+  mark_as_free(blk);
+  MM_MARK(FREED);
+
+  // if it is mmapped, just munmap it
+  if (is_mmapped(blk)) {
+    munmap(blk);
+    return;
+  }
+
+  release_sbrked(blk);
 }
 
 static inline void split(BlockPtr blk, size_t aligned_size) {
@@ -311,7 +324,7 @@ void *MALLOC(size_t size) {
     return NULL;
   }
 
-  if (SBRK == allocation && is_splittable(blk, aligned_size)) {
+  if (is_splittable(blk, aligned_size)) {
     split(blk, aligned_size);
   }
 
@@ -345,7 +358,7 @@ static inline void *realloc_from_mmap_to_mmap(BlockPtr blk,
   }
   size_t flagged_size = blk->size;
   size_t size_update = aligned_size - true_size;
-  ma_head.total_bytes_allocated += size_update;
+  allocated_bytes_update(&ma_head.total_bytes_allocated, size_update);
 
   BlockPtr new_blk = (BlockPtr)new;
   if (new_blk == blk) {
@@ -366,19 +379,6 @@ static inline void *realloc_from_mmap_to_mmap(BlockPtr blk,
   }
   return allocated_memory(new_blk);
 }
-
-/* static inline void append_to_main_arena(BlockPtr b) { */
-/*   // already at the tail */
-/*   if (b->next == NULL) */
-/*     return; */
-/*   // remove b from the middle */
-/*   b->next->prev = b->prev; */
-/*   b->prev->next = b->next; */
-/*   // append b to tail */
-/*   a_head->tail->next = b; */
-/*   b->prev = a_head->tail; */
-/*   a_head->tail = b; */
-/* } */
 
 static inline void *realloc_btw_main_and_mmapped(BlockPtr blk,
                                                  size_t aligned_size) {
@@ -425,7 +425,7 @@ void *realloc_from_sbrk_to_sbrk(BlockPtr blk, size_t aligned_size) {
     return n;
   }
   // grew or had enough but may need splitting now
-  else if (is_splittable(blk, aligned_size)) {
+  if (is_splittable(blk, aligned_size)) {
     MM_MARK(REALLOC_ENOUGH_SIZE);
     split(blk, aligned_size);
   }
@@ -434,10 +434,11 @@ void *realloc_from_sbrk_to_sbrk(BlockPtr blk, size_t aligned_size) {
 
 void *REALLOC(void *p, size_t size) {
   MM_MARK(REALLOC_CALLED);
-  // if we don't have anywhere to realloc, it is effectively a malloc
+  // If we don't have anywhere to realloc, it is effectively a malloc.
   if (p == NULL)
     return MALLOC(size);
 
+  // If size is not given, it effectively is a free.
   if (size == 0) {
     FREE(p);
     return NULL;
@@ -447,7 +448,6 @@ void *REALLOC(void *p, size_t size) {
     return NULL;
 
   size = align_up_fundamental(size);
-
   size_t true_size = get_true_size(blk);
 
   if (true_size == size)

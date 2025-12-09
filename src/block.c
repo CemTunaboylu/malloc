@@ -209,6 +209,8 @@ int is_next_fusable(BlockPtr b) {
 /* ----- splitting ------ */
 
 int is_splittable(BlockPtr blk, size_t aligned_size) {
+  if (is_mmapped(blk))
+    return 0;
   size_t remaining_size = get_true_size(blk) - aligned_size;
   size_t min_splittable_total_block_size =
       SIZE_OF_BLOCK + MIN_REQUIRED_SPLIT_SIZE;
