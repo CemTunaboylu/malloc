@@ -416,15 +416,15 @@ static inline void *realloc_from_mmap_to_mmap(BlockPtr blk,
       .prev = blk->prev,
   };
 
-  if (true_size >= aligned_size) {
-    MM_MARK(MUNMAPPED_EXCESS);
-  } else {
-    MM_MARK(MMAPPED_BIGGER);
-  }
   void *new = mm_mremap((void *)blk, full_old_size, full_aligned_size);
   if (IS_FAILED_BY_PTR(new)) {
     perror("mremap failed");
     return p;
+  }
+  if (true_size >= aligned_size) {
+    MM_MARK(MUNMAPPED_EXCESS);
+  } else {
+    MM_MARK(MMAPPED_BIGGER);
   }
   size_t flagged_size = blk->size;
   size_t size_update = aligned_size - true_size;
