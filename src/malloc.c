@@ -287,7 +287,7 @@ static inline void munmap(BlockPtr blk) {
   allocated_bytes_update(&(ma_head.total_bytes_allocated), -back);
 }
 
-static inline void release_sbrked(BlockPtr blk) {
+static inline void free_or_maybe_release_sbrked(BlockPtr blk) {
   fuse_fwd(blk);
   fuse_bwd(&blk);
   correct_tail_if_eaten(blk);
@@ -358,7 +358,7 @@ void FREE(void *p) {
     return;
   }
 
-  release_sbrked(blk);
+  free_or_maybe_release_sbrked(blk);
 }
 
 static inline void split(BlockPtr blk, size_t aligned_size) {
