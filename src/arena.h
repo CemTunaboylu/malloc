@@ -28,6 +28,8 @@ extern const size_t MAX_ALIGNMENT;
 #define SMALL_BIN_SIZE_CAP                                                     \
   (SMALL_BIN_SIZE_START + NUM_SMALL_BINS * SMALL_BIN_STEP - 1)
 
+#define IS_SMALL(req_aligned_size) (req_aligned_size < SMALL_BIN_SIZE_CAP)
+
 #define NUM_LARGE_BINS (63)
 #define LARGE_BIN_SIZE_START (SMALL_BIN_SIZE_CAP + ALIGNMENT)
 // In glibc malloc, spacing seems to vary, 64, 512, 4096 etc. but for simplicity
@@ -70,7 +72,7 @@ extern const size_t MAX_ALIGNMENT;
 // properly index the corresponding bin.
 // NOTE: small bin starts at index 1, thus we don't -1.
 #define GET_LARGE_BIN_IDX(aligned_req_size)                                    \
-  ((aligned_req_size < LARGE_BIN_SIZE_START)                                   \
+  (IS_SMALL(aligned_req_size)                                                  \
        ? 0                                                                     \
        : ((aligned_req_size - LARGE_BIN_SIZE_START) / LARGE_BIN_STEP))
 #define GET_BARE_BIN_IDX(aligned_req_size)                                     \
