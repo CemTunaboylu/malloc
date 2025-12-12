@@ -72,7 +72,11 @@ extern size_t markers[NUM_MARKERS];
 
 #define MM_MARK(ix) markers[ix] += 1
 #define MM_RESET_MARKER(ix) markers[ix] = 0
-#define MM_ASSERT_MARKER(ix, times) MM_ASSERT_EQ_INT("", markers[ix], (times))
+#define MM_ASSERT_MARKER(ix, times)                                            \
+  {                                                                            \
+    MM_ASSERT_EQ_INT("", markers[ix], (times));                                \
+    MM_RESET_MARKER(ix);                                                       \
+  }
 
 #else
 #if defined(__GNUC__)

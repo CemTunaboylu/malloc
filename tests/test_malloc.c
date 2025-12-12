@@ -21,6 +21,8 @@ static void post_test_sanity(void);
 #include <block.h>
 #include <internal.h>
 
+size_t markers[NUM_MARKERS] = {0};
+
 extern struct Arena a_head;
 extern struct MMapArena ma_head;
 extern size_t SIZE_OF_BLOCK;
@@ -35,6 +37,60 @@ extern void *mm_realloc(void *, size_t);
 #define MALLOC_UNDER_TESTING mm_malloc
 #define REALLOC_UNDER_TESTING mm_realloc
 #define CURRENT_BRK mm_sbrk(0)
+
+#define POPULATE_PTR_ARR_VIA_MALLOC(num_blocks, ptrs, block_size)              \
+  {                                                                            \
+    for (size_t i = 0; i < num_blocks; i++) {                                  \
+      void *p = ensuring_malloc(block_size);                                   \
+      TEST_ASSERT(p != NULL);                                                  \
+      ptrs[i] = p;                                                             \
+    }                                                                          \
+    for (size_t i = 1; i < num_blocks; i++) {                                  \
+      TEST_ASSERT(ptrs[i] != ptrs[i - 1]);                                     \
+    }                                                                          \
+  }
+
+#define MARK_AS_FREE_BLKS_UNTIL(num_blocks, ptrs)                              \
+  {                                                                            \
+    for (size_t i = 0; i < num_blocks; i++) {                                  \
+      void *p = ptrs[i];                                                       \
+      BlockPtr blk = reconstruct_from_user_memory(p);                          \
+      mark_as_free(blk);                                                       \
+      TEST_ASSERT_(get_true_size(blk) == *((size_t *)next(blk) - 1),           \
+                   "true size is not put in the footer");                      \
+    }                                                                          \
+  }
+
+#define MARK_AS_FREE_BLKS_EXCEPT(num_blocks, ptrs, except)                     \
+  {                                                                            \
+    MARK_AS_FREE_BLKS_UNTIL(except, ptrs);                                     \
+    MARK_AS_FREE_BLKS_UNTIL(num_blocks - except - 1,                           \
+                            (void *)(ptrs + except + 1));                      \
+  }
+
+#define FREE_BLKS_EXCEPT(num_blocks, ptrs, except)                             \
+  {                                                                            \
+    for (size_t i = 0; i < num_blocks; i++) {                                  \
+      if (i == except)                                                         \
+        continue;                                                              \
+      ensuring_free(ptrs[i]);                                                  \
+    }                                                                          \
+  }
+
+#define SET_BYTES_INCREMENTALLY(ptr, blk_size)                                 \
+  {                                                                            \
+    for (size_t i = 0; i < blk_size; i++) {                                    \
+      ptr[i] = (char)i;                                                        \
+    }                                                                          \
+  }
+
+#define ASSERT_BYTES_ARE_INCREMENTALLY_SET(ptr, blk_size)                      \
+  {                                                                            \
+    for (size_t i = 0; i < blk_size; i++) {                                    \
+      TEST_ASSERT_(ptr[i] == (char)i, "%lu th byte %c is not equal to %c", i,  \
+                   ptr[i], (char)i);                                           \
+    }                                                                          \
+  }
 
 #ifdef ENABLE_LOG
 #define LOG(...)                                                               \
@@ -51,9 +107,13 @@ extern void *mm_realloc(void *, size_t);
 static size_t base_total_blocks;
 static size_t base_free_blocks;
 
-static void reset_markers(void) {
-  for (size_t ix = 0; ix < NUM_MARKERS; ix++)
+static void check_and_reset_all_markers_unset(void) {
+  for (size_t ix = 0; ix < NUM_MARKERS; ix++) {
+    TEST_CHECK_(markers[ix] == 0,
+                "marker %lu should have been 0, but it is %lu", ix,
+                markers[ix]);
     markers[ix] = 0;
+  }
 }
 
 static void check_all_arena_heads_are_null(void) {
@@ -64,14 +124,15 @@ static void check_all_arena_heads_are_null(void) {
 }
 
 static void pre_test_sanity(void) {
-  reset_markers();
   LOG("\t pre_test_sanity \n");
 
+  check_all_arena_heads_are_null();
   base_total_blocks = _mm_total_blocks();
   base_free_blocks = _mm_free_blocks();
-  check_all_arena_heads_are_null();
   TEST_CHECK(base_total_blocks == 0);
   TEST_CHECK(base_free_blocks == 0);
+
+  check_and_reset_all_markers_unset();
 }
 
 static void post_test_sanity(void) {
@@ -87,8 +148,7 @@ static void post_test_sanity(void) {
   TEST_CHECK(_mm_free_blocks() == base_free_blocks);
   TEST_MSG("free block mismatch: %zu -> %zu", base_free_blocks,
            _mm_free_blocks());
-
-  check_all_arena_heads_are_null();
+  check_and_reset_all_markers_unset();
 }
 
 static inline int is_aligned(void *p) {
@@ -121,10 +181,7 @@ void *ensuring_calloc(size_t len, size_t size_of) {
   return q;
 }
 
-void ensure_freed(void) {
-  MM_ASSERT_MARKER(FREED, 1);
-  MM_RESET_MARKER(FREED);
-}
+void ensure_freed(void) { MM_ASSERT_MARKER(FREED, 1); }
 
 void ensuring_free(void *p) {
   MM_RESET_MARKER(FREE_CALLED);
@@ -142,16 +199,13 @@ void *ensuring_malloc(size_t size) {
 
 void ensure_fuse_fwd_is_called(size_t exp) {
   MM_ASSERT_MARKER(FUSE_FWD_CALLED, exp);
-  MM_RESET_MARKER(FUSE_FWD_CALLED);
 }
 
 void ensure_fuse_bwd_is_called(size_t exp) {
   MM_ASSERT_MARKER(FUSE_BWD_CALLED, exp);
-  MM_RESET_MARKER(FUSE_BWD_CALLED);
 }
 
 void *ensuring_realloc(void *p, size_t size) {
-  MM_RESET_MARKER(MALLOC_CALLED);
   MM_RESET_MARKER(REALLOC_CALLED);
   void *r = REALLOC_UNDER_TESTING(p, size);
   MM_ASSERT_MARKER(REALLOC_CALLED, 1);
@@ -160,134 +214,151 @@ void *ensuring_realloc(void *p, size_t size) {
 
 void ensure_realloc_enough_size(void) {
   MM_ASSERT_MARKER(REALLOC_ENOUGH_SIZE, 1);
-  MM_RESET_MARKER(REALLOC_ENOUGH_SIZE);
 }
 
 static void test_align(void) {
   for (size_t any = 1; any <= MAX_ALIGNMENT; any++)
-    TEST_CHECK((MAX_ALIGNMENT) == align(any));
+    TEST_ASSERT((MAX_ALIGNMENT) == align(any));
 
   size_t two_max_alg = (MAX_ALIGNMENT * 2);
   for (size_t any = MAX_ALIGNMENT + 1; any <= two_max_alg; any++)
-    TEST_CHECK_(two_max_alg == align(any), "%lu != %lu ", any, align(any));
+    TEST_ASSERT_(two_max_alg == align(any), "%lu != %lu ", any, align(any));
 
   size_t multiple = MAX_ALIGNMENT * 4;
-  TEST_CHECK(multiple == align(multiple));
+  TEST_ASSERT(multiple == align(multiple));
 
   size_t large = MAX_ALIGNMENT * 4 - (MAX_ALIGNMENT / 2);
-  TEST_CHECK((MAX_ALIGNMENT * 4) == align(large));
+  TEST_ASSERT((MAX_ALIGNMENT * 4) == align(large));
 }
 
 static void test_encode(void) {
   size_t size = 3;
   size_t aligned_size = align(size);
   void *p = ensuring_malloc(size);
-  TEST_CHECK(p != NULL);
+  TEST_ASSERT(p != NULL);
+  MM_ASSERT_MARKER(BY_SBRKING, 1);
 
   BlockPtr b = reconstruct_from_user_memory(p);
-  TEST_CHECK(!is_free(b));
-  TEST_CHECK(!is_mmapped(b));
-  TEST_CHECK_(get_true_size(b) == aligned_size, "%lu != %lu", get_true_size(b),
-              aligned_size);
+  TEST_ASSERT(!is_free(b));
+  TEST_ASSERT(!is_mmapped(b));
+  TEST_ASSERT_(get_true_size(b) == aligned_size, "%lu != %lu", get_true_size(b),
+               aligned_size);
 
   mark_as_free(b);
-  TEST_CHECK(is_free(b));
-  TEST_CHECK(!is_mmapped(b));
-  TEST_CHECK_(get_true_size(b) == aligned_size, "%lu != %lu", get_true_size(b),
-              aligned_size);
+  TEST_ASSERT(is_free(b));
+  TEST_ASSERT(!is_mmapped(b));
+  TEST_ASSERT_(get_true_size(b) == aligned_size, "%lu != %lu", get_true_size(b),
+               aligned_size);
 
   mark_as_used(b);
-  TEST_CHECK(!is_free(b));
-  TEST_CHECK(!is_mmapped(b));
-  TEST_CHECK_(get_true_size(b) == aligned_size, "%lu != %lu", get_true_size(b),
-              aligned_size);
+  TEST_ASSERT(!is_free(b));
+  TEST_ASSERT(!is_mmapped(b));
+  TEST_ASSERT_(get_true_size(b) == aligned_size, "%lu != %lu", get_true_size(b),
+               aligned_size);
 
   ensuring_free(p);
+  MM_ASSERT_MARKER(RELEASED, 1);
 }
 
 static void test_true_size(void) {
   size_t size = 3;
   size_t aligned_size = align(size);
   void *p = ensuring_malloc(size);
-  TEST_CHECK(p != NULL);
+  TEST_ASSERT(p != NULL);
+  MM_ASSERT_MARKER(BY_SBRKING, 1);
 
   BlockPtr b = reconstruct_from_user_memory(p);
-  TEST_CHECK(!is_free(b));
-  TEST_CHECK_(get_true_size(b) == aligned_size, "%lu != %lu", get_true_size(b),
-              aligned_size);
+  TEST_ASSERT(!is_free(b));
+  TEST_ASSERT_(get_true_size(b) == aligned_size, "%lu != %lu", get_true_size(b),
+               aligned_size);
 
   ensuring_free(p);
+  MM_ASSERT_MARKER(RELEASED, 1);
 }
 
 static void test_invalid_addr_outside_before_for_is_valid_addr(void) {
   void *p = ensuring_malloc(1);
-  TEST_CHECK(p != NULL);
+  TEST_ASSERT(p != NULL);
+  MM_ASSERT_MARKER(BY_SBRKING, 1);
   BlockPtr head = a_head.head;
   void *invalid = (char *)head + sizeof(struct SBlock) * 9;
-  TEST_CHECK_(
+  TEST_ASSERT_(
       get_block_from_main_arena(&a_head, invalid) == NULL,
       "address %p should have been invalid since it is before list head %p",
       invalid, (void *)head);
   ensuring_free(p);
+  MM_ASSERT_MARKER(RELEASED, 1);
 }
 
 static void test_invalid_addr_outside_after_for_is_valid_addr(void) {
   void *p = ensuring_malloc(1);
-  TEST_CHECK(p != NULL);
+  TEST_ASSERT(p != NULL);
+  MM_ASSERT_MARKER(BY_SBRKING, 1);
   void *invalid = (char *)p + sizeof(struct SBlock);
-  TEST_CHECK(get_block_from_main_arena(&a_head, invalid) == NULL);
+  TEST_ASSERT(get_block_from_main_arena(&a_head, invalid) == NULL);
   ensuring_free(p);
+  MM_ASSERT_MARKER(RELEASED, 1);
 }
 
 static void test_valid_addr_for_is_valid_addr(void) {
   void *p = ensuring_malloc(1);
-  TEST_CHECK(p != NULL);
-  TEST_CHECK(get_block_from_main_arena(&a_head, p));
+  TEST_ASSERT(p != NULL);
+  MM_ASSERT_MARKER(BY_SBRKING, 1);
+  TEST_ASSERT(get_block_from_main_arena(&a_head, p));
   ensuring_free(p);
+  MM_ASSERT_MARKER(RELEASED, 1);
 }
 
 // malloc(0) is expected to return NULL pointer
 static void test_malloc_zero(void) {
   void *p = ensuring_malloc(0);
-  TEST_CHECK(p == NULL);
+  TEST_ASSERT(p == NULL);
   FREE_UNDER_TESTING(p);
   MM_ASSERT_MARKER(FREE_CALLED, 0);
   MM_ASSERT_MARKER(FREED, 0);
 }
 
 static void test_first_malloc_new_head(void) {
-  TEST_CHECK(a_head.head == NULL);
+  TEST_ASSERT(a_head.head == NULL);
   void *p = ensuring_malloc(5);
-  TEST_CHECK(p != NULL);
-  TEST_CHECK(a_head.head != NULL);
+  MM_ASSERT_MARKER(BY_SBRKING, 1);
+  TEST_ASSERT(p != NULL);
+  TEST_ASSERT(a_head.head != NULL);
   ensuring_free(p);
-  TEST_CHECK(a_head.head == NULL);
+  MM_ASSERT_MARKER(RELEASED, 1);
+  TEST_ASSERT(a_head.head == NULL);
 }
 
 static void test_header_alignment_and_size(void) {
   size_t requested_bytes = 1;
   void *p = ensuring_malloc(requested_bytes);
-  TEST_CHECK(p != NULL);
+  TEST_ASSERT(p != NULL);
+  MM_ASSERT_MARKER(BY_SBRKING, 1);
 
   BlockPtr head = recons_blk_from_user_mem_ptr(p);
-  TEST_CHECK(get_true_size(head) == align(requested_bytes));
+  TEST_ASSERT(get_true_size(head) == align(requested_bytes));
   ensuring_free(p);
+  MM_ASSERT_MARKER(RELEASED, 1);
 }
 
 static void test_malloc_allocated_memory_aligned(void) {
   void *p = ensuring_malloc(31);
-  TEST_CHECK(p != NULL);
-  TEST_CHECK(is_aligned(p));
+  TEST_ASSERT(p != NULL);
+  MM_ASSERT_MARKER(BY_SBRKING, 1);
+  TEST_ASSERT(is_aligned(p));
   ensuring_free(p);
+  MM_ASSERT_MARKER(RELEASED, 1);
 }
 
 static void test_calloc_zero_fill(void) {
   size_t n = 16, sz = 8;
   unsigned char *p = (unsigned char *)ensuring_calloc(n, sz);
+  MM_ASSERT_MARKER(BY_SBRKING, 1);
   TEST_ASSERT(p != NULL);
   for (size_t i = 0; i < n * sz; ++i)
-    TEST_CHECK(p[i] == 0);
+    TEST_ASSERT(p[i] == 0);
   ensuring_free(p);
+  MM_ASSERT_MARKER(RELEASED, 1);
 }
 
 static void test_forward_fusion_2_blocks(void) {
@@ -297,23 +368,12 @@ static void test_forward_fusion_2_blocks(void) {
   void *ptrs[num_blocks];
   size_t base_bytes = 10;
 
-  for (size_t i = 0; i < num_blocks; i++) {
-    void *p = ensuring_malloc(base_bytes);
-    TEST_CHECK(p != NULL);
-    ptrs[i] = p;
-  }
-
-  for (size_t i = 1; i < num_blocks; i++) {
-    TEST_CHECK(ptrs[i] != ptrs[i - 1]);
-  }
+  POPULATE_PTR_ARR_VIA_MALLOC(num_blocks, ptrs, base_bytes);
+  MM_ASSERT_MARKER(BY_SBRKING, num_blocks);
 
   LOG("\tpost-malloc ===\n");
 
-  for (size_t i = 0; i < num_blocks - 1; i++) {
-    void *p = ptrs[i];
-    BlockPtr blk = reconstruct_from_user_memory(p);
-    mark_as_free(blk);
-  }
+  MARK_AS_FREE_BLKS_UNTIL(num_blocks - 1, ptrs);
 
   LOG("\tafter artificially freeing blocks ===\n");
 
@@ -328,42 +388,33 @@ static void test_forward_fusion_2_blocks(void) {
 
   size_t aligned_base_bytes = align(base_bytes);
   size_t expected_size = (aligned_base_bytes * 2 + SIZE_OF_BLOCK);
-  TEST_CHECK_(get_true_size(blk) == expected_size, "size must be %lu, got %lu",
-              expected_size, get_true_size(blk));
+  TEST_ASSERT_(get_true_size(blk) == expected_size, "size must be %lu, got %lu",
+               expected_size, get_true_size(blk));
 
   BlockPtr last = ptrs[num_blocks - 1];
-  TEST_CHECK_(!is_free(last), "last block should not have been freed");
+  TEST_ASSERT_(!is_free(last), "last block should not have been freed");
   ensuring_free(last);
+  MM_ASSERT_MARKER(RELEASED, 1);
+  MM_ASSERT_MARKER(FUSE_BWD_CALLED, 1);
 }
 
 static void test_backward_fusion_2_blocks(void) {
   LOG("=== %s: start ===\n", __func__);
 
-  const size_t n = 3;
-  void *ptrs[n];
+  const size_t num_blocks = 3;
+  void *ptrs[num_blocks];
   size_t base_bytes = 10;
 
-  for (size_t i = 0; i < n; i++) {
-    void *p = ensuring_malloc(base_bytes);
-    TEST_CHECK(p != NULL);
-    ptrs[i] = p;
-  }
-
-  for (size_t i = 1; i < n; i++) {
-    TEST_CHECK(ptrs[i] != ptrs[i - 1]);
-  }
+  POPULATE_PTR_ARR_VIA_MALLOC(num_blocks, ptrs, base_bytes);
+  MM_ASSERT_MARKER(BY_SBRKING, num_blocks);
 
   LOG("\tpost-malloc ===\n");
 
-  for (size_t i = 0; i < n - 1; i++) {
-    void *p = ptrs[i];
-    BlockPtr blk = reconstruct_from_user_memory(p);
-    mark_as_free(blk);
-  }
+  MARK_AS_FREE_BLKS_UNTIL(num_blocks - 1, ptrs);
 
   LOG("\t after artificially freeing blocks ===\n");
 
-  void *p = ptrs[n - 2];
+  void *p = ptrs[num_blocks - 2];
   BlockPtr blk = reconstruct_from_user_memory(p);
 
   fuse_bwd(&blk);
@@ -373,30 +424,26 @@ static void test_backward_fusion_2_blocks(void) {
   LOG("\t post-bwd-fusion ===\n");
 
   size_t aligned_base_bytes = align(base_bytes);
-  size_t expected_size = (aligned_base_bytes * (n - 1) + SIZE_OF_BLOCK);
-  TEST_CHECK_(get_true_size(blk) == expected_size, "size must be %lu, got %lu",
-              expected_size, get_true_size(blk));
+  size_t expected_size =
+      (aligned_base_bytes * (num_blocks - 1) + SIZE_OF_BLOCK);
+  TEST_ASSERT_(get_true_size(blk) == expected_size, "size must be %lu, got %lu",
+               expected_size, get_true_size(blk));
 
-  void *last = ptrs[n - 1];
+  void *last = ptrs[num_blocks - 1];
   ensuring_free(last);
+  MM_ASSERT_MARKER(FUSE_BWD_CALLED, 1);
+  MM_ASSERT_MARKER(RELEASED, 1);
 }
 
 static void test_free_no_release_or_fusion(void) {
   LOG("=== %s: start ===\n", __func__);
 
-  const size_t n = 5;
-  void *ptrs[n];
+  const size_t num_blocks = 5;
+  void *ptrs[num_blocks];
   size_t base_bytes = 30;
 
-  for (size_t i = 0; i < n; i++) {
-    void *p = ensuring_malloc(base_bytes);
-    TEST_CHECK(p != NULL);
-    ptrs[i] = p;
-  }
-
-  for (size_t i = 1; i < n; i++) {
-    TEST_CHECK(ptrs[i] != ptrs[i - 1]);
-  }
+  POPULATE_PTR_ARR_VIA_MALLOC(num_blocks, ptrs, base_bytes);
+  MM_ASSERT_MARKER(BY_SBRKING, num_blocks);
 
   LOG("\tpost-malloc ===\n");
 
@@ -410,65 +457,50 @@ static void test_free_no_release_or_fusion(void) {
   LOG("\tpost-free ===\n");
 
   BlockPtr blk = recons_blk_from_user_mem_ptr(p);
-  TEST_CHECK(is_free(blk));
+  TEST_ASSERT(is_free(blk));
 
-  for (size_t i = 0; i < n; i++) {
-    if (i == 1)
-      continue;
-    ensuring_free(ptrs[i]);
-  }
+  FREE_BLKS_EXCEPT(num_blocks, ptrs, (size_t)1);
+  // first one will fuse with the ptrs[1] (the one we freed above)
+  MM_ASSERT_MARKER(FUSE_FWD_CALLED, 1);
+  // each in ptrs[2:] will fuse with the prev
+  MM_ASSERT_MARKER(FUSE_BWD_CALLED, num_blocks - 2);
+  MM_ASSERT_MARKER(RELEASED, 1);
 }
 
 static void test_free_with_fusion_no_release(void) {
   LOG("=== %s: start ===\n", __func__);
 
-  const size_t n = 5;
-  void *ptrs[n];
+  const size_t num_blocks = 5;
+  void *ptrs[num_blocks];
   size_t base_bytes = 30;
 
-  for (size_t i = 0; i < n; i++) {
-    void *p = ensuring_malloc(base_bytes);
-    TEST_CHECK(p != NULL);
-    ptrs[i] = p;
-  }
-
-  for (size_t i = 1; i < n; i++) {
-    TEST_CHECK(ptrs[i] != ptrs[i - 1]);
-  }
+  POPULATE_PTR_ARR_VIA_MALLOC(num_blocks, ptrs, base_bytes);
+  MM_ASSERT_MARKER(BY_SBRKING, num_blocks);
 
   LOG("\tpost-malloc ===\n");
 
-  const size_t to_free = n / 2;
-  // leave the last block unfree to avoid release
-  for (size_t i = 0; i < n - 1; i++) {
-    if (to_free == i)
-      continue;
-    void *p = ptrs[i];
-    BlockPtr blk = reconstruct_from_user_memory(p);
-    mark_as_free(blk);
-    TEST_ASSERT_(get_true_size(blk) == *((size_t *)next(blk) - 1),
-                 "true size is not put in the footer");
-  }
+  const size_t to_free = num_blocks / 2;
+
+  MARK_AS_FREE_BLKS_EXCEPT(num_blocks - 1, ptrs, to_free);
 
   LOG("\tafter artificially freeing blocks ===\n");
 
   void *p = ptrs[to_free];
   BlockPtr blk = reconstruct_from_user_memory(p);
   BlockPtr after_fusion_head = prev(prev(blk));
-  TEST_CHECK_(!is_free(blk), "block to free should not have been free");
+  TEST_ASSERT_(!is_free(blk), "block to free should not have been free");
   ensuring_free(p);
   ensure_fuse_fwd_is_called(1);
   ensure_fuse_bwd_is_called(2);
-  MM_ASSERT_MARKER(RELEASED, 0);
 
   LOG("\tpost-free middle ===\n");
 
-  size_t total_block_sizes = SIZE_OF_BLOCK * (n - 2);
-  size_t total_allocated = align(base_bytes) * (n - 1);
+  size_t total_block_sizes = SIZE_OF_BLOCK * (num_blocks - 2);
+  size_t total_allocated = align(base_bytes) * (num_blocks - 1);
   size_t total_bytes_after_fusion = total_allocated + total_block_sizes;
-  TEST_CHECK_(get_true_size(after_fusion_head) == total_bytes_after_fusion,
-              "size of after_fusion_head should add up to %lu, not %lu",
-              total_bytes_after_fusion, get_true_size(after_fusion_head));
+  TEST_ASSERT_(get_true_size(after_fusion_head) == total_bytes_after_fusion,
+               "size of after_fusion_head should add up to %lu, not %lu",
+               total_bytes_after_fusion, get_true_size(after_fusion_head));
   TEST_ASSERT_(get_true_size(after_fusion_head) ==
                    *((size_t *)next(after_fusion_head) - 1),
                "true size is not put in the footer of fusion head");
@@ -476,11 +508,13 @@ static void test_free_with_fusion_no_release(void) {
   TEST_ASSERT_(!is_prev_free(after_fusion_head),
                "fusion head must have prev free false");
 
-  void *last = ptrs[n - 1];
+  void *last = ptrs[num_blocks - 1];
   BlockPtr last_blk = reconstruct_from_user_memory(last);
   TEST_ASSERT_(!is_free(last_blk), "last block must not be free");
   TEST_ASSERT_(is_prev_free(last_blk), "last block's prev must be free");
   ensuring_free(last);
+  MM_ASSERT_MARKER(RELEASED, 1);
+  MM_ASSERT_MARKER(FUSE_BWD_CALLED, 1);
 }
 
 static void test_copy_block(void) {
@@ -490,18 +524,19 @@ static void test_copy_block(void) {
   const size_t src_size_of = 4;
   const size_t src_n = src_len * src_size_of;
 
-  int *p = (int *)ensuring_malloc(src_n);
-  TEST_CHECK(p);
-  for (size_t i = 0; i < src_len; i++)
-    p[i] = i;
+  char *p = (char *)ensuring_malloc(src_n);
+  TEST_ASSERT(p);
+  MM_ASSERT_MARKER(BY_SBRKING, 1);
+  SET_BYTES_INCREMENTALLY(p, src_n);
 
   LOG("\tpost-malloc with size %lu and setting values for data ===\n", src_n);
 
   const size_t to_copy_len = 9;
   const size_t to_copy_size_of = 4;
 
-  int *q = (int *)ensuring_calloc(to_copy_len, to_copy_size_of);
+  char *q = (char *)ensuring_calloc(to_copy_len, to_copy_size_of);
   TEST_ASSERT(q != NULL);
+  MM_ASSERT_MARKER(BY_SBRKING, 1);
 
   BlockPtr p_blk = reconstruct_from_user_memory(p);
   BlockPtr q_blk = reconstruct_from_user_memory(q);
@@ -511,10 +546,12 @@ static void test_copy_block(void) {
 
   size_t min = src_len > to_copy_len ? to_copy_len : src_len;
   for (size_t i = 0; i < min; i++)
-    TEST_CHECK_(p[i] == q[i], "%d != %d", p[i], q[i]);
+    TEST_ASSERT_(p[i] == q[i], "%d != %d", p[i], q[i]);
 
   ensuring_free(p);
   ensuring_free(q);
+  MM_ASSERT_MARKER(FUSE_BWD_CALLED, 1);
+  MM_ASSERT_MARKER(RELEASED, 1);
 }
 
 static void test_realloc_grow_and_shrink(void) {
@@ -523,9 +560,9 @@ static void test_realloc_grow_and_shrink(void) {
   const size_t n = 10;
 
   char *p = (char *)ensuring_malloc(n);
-  TEST_CHECK(p);
-  for (int i = 0; i < (int)n; i++)
-    p[i] = (char)i;
+  TEST_ASSERT(p);
+  MM_ASSERT_MARKER(BY_SBRKING, 1);
+  SET_BYTES_INCREMENTALLY(p, n);
 
   LOG("\tpost-malloc with size %lu and setting values for data ===\n", n);
 
@@ -533,28 +570,28 @@ static void test_realloc_grow_and_shrink(void) {
 
   char *q = (char *)ensuring_realloc(p, re_grow_n);
   MM_ASSERT_MARKER(MALLOC_CALLED, 1);
-  MM_RESET_MARKER(MALLOC_CALLED);
+  MM_ASSERT_MARKER(BY_SBRKING, 1);
   MM_ASSERT_MARKER(FREE_CALLED, 1);
   ensure_freed();
-  MM_RESET_MARKER(FREE_CALLED);
   TEST_ASSERT(q != NULL);
-  for (int i = 0; i < (int)n; i++)
-    TEST_CHECK(q[i] == (char)i);
+  ASSERT_BYTES_ARE_INCREMENTALLY_SET(q, n);
 
   LOG("\tafter growing realloc with %lu ===\n", re_grow_n);
 
   const size_t re_shrink_n = 5;
-  char *r = (char *)REALLOC_UNDER_TESTING(q, re_shrink_n);
+  char *r = (char *)ensuring_realloc(q, re_shrink_n);
   ensure_realloc_enough_size();
   MM_ASSERT_MARKER(MALLOC_CALLED, 0);
   MM_ASSERT_MARKER(FREE_CALLED, 0);
   TEST_ASSERT(r != NULL);
-  for (int i = 0; i < (int)re_shrink_n; i++)
-    TEST_CHECK(r[i] == (char)i);
+  ASSERT_BYTES_ARE_INCREMENTALLY_SET(r, re_shrink_n);
 
   LOG("\tafter shrinking realloc with %lu ===\n", re_shrink_n);
   // this should free the whole thing, since it will fuse bk and fw
   ensuring_free(r);
+  MM_ASSERT_MARKER(FUSE_FWD_CALLED, 1);
+  MM_ASSERT_MARKER(FUSE_BWD_CALLED, 1);
+  MM_ASSERT_MARKER(RELEASED, 1);
 }
 
 static void test_realloc_with_size_zero(void) {
@@ -562,15 +599,16 @@ static void test_realloc_with_size_zero(void) {
 
   const size_t n = 10;
   char *p = (char *)ensuring_malloc(n);
-  TEST_CHECK(p);
+  TEST_ASSERT(p);
   MM_RESET_MARKER(MALLOC_CALLED);
+  MM_ASSERT_MARKER(BY_SBRKING, 1);
 
   const size_t zero = 0;
 
   char *q = (char *)ensuring_realloc(p, zero);
   MM_ASSERT_MARKER(MALLOC_CALLED, 0);
   MM_ASSERT_MARKER(FREE_CALLED, 1);
-  MM_RESET_MARKER(FREE_CALLED);
+  MM_ASSERT_MARKER(RELEASED, 1);
   ensure_freed();
   TEST_ASSERT(q == NULL);
 }
@@ -580,11 +618,10 @@ static void test_mmap(void) {
 
   const size_t n = MIN_CAP_FOR_MMAP + 1;
   char *p = (char *)ensuring_malloc(n);
-  TEST_CHECK(p);
+  TEST_ASSERT(p);
 
   MM_ASSERT_MARKER(BY_MMAPPING, 1);
-  MM_RESET_MARKER(BY_MMAPPING);
-  MM_RESET_MARKER(MALLOC_CALLED);
+  MM_ASSERT_MARKER(BY_SBRKING, 0);
 
   ensuring_free(p);
   MM_ASSERT_MARKER(MUNMAPPED, 1);
@@ -650,14 +687,12 @@ static void test_mremap(void) {
 
   const size_t n = MMAP_SIZE(1);
   char *p = (char *)ensuring_malloc(n);
-  TEST_CHECK(p);
-  for (size_t i = 0; i < n; i++)
-    p[i] = (char)(i % 128);
+  TEST_ASSERT(p);
+
+  SET_BYTES_INCREMENTALLY(p, n);
 
   MM_ASSERT_MARKER(BY_MMAPPING, 1);
   MM_ASSERT_MARKER(BY_SBRKING, 0);
-  MM_RESET_MARKER(BY_MMAPPING);
-  MM_RESET_MARKER(MALLOC_CALLED);
 
   LOG("\tpost-malloc with size %lu and setting values for data ===\n", n);
 
@@ -670,28 +705,23 @@ static void test_mremap(void) {
   MM_ASSERT_MARKER(FREE_CALLED, 0);
   TEST_ASSERT(q != NULL);
 
-  for (size_t i = 0; i < n; i++) {
-    TEST_CHECK_(q[i] == (char)(i % 128), "[%lu] exp: '%c' != got: '%c'", i,
-                (char)(i % 128), q[i]);
-  }
+  ASSERT_BYTES_ARE_INCREMENTALLY_SET(q, n);
 
-  for (size_t i = n; i < re_grow_n; i++) {
-    q[i] = (char)(i % 128);
-  }
+  SET_BYTES_INCREMENTALLY(q, re_grow_n);
   LOG("\tafter growing mremap with %lu ===\n", re_grow_n);
 
   const size_t re_shrink_n = MMAP_SIZE(5);
-  char *r = (char *)REALLOC_UNDER_TESTING(q, re_shrink_n);
+  char *r = (char *)ensuring_realloc(q, re_shrink_n);
   MM_ASSERT_MARKER(MUNMAPPED_EXCESS, 1);
   MM_ASSERT_MARKER(MALLOC_CALLED, 0);
   MM_ASSERT_MARKER(FREE_CALLED, 0);
   TEST_ASSERT(r != NULL);
-  for (size_t i = 0; i < re_shrink_n; i++)
-    TEST_CHECK_(r[i] == (char)(i % 128), "[%lu] exp: '%c' != got: '%c'", i,
-                (char)(i % 128), r[i]);
+
+  ASSERT_BYTES_ARE_INCREMENTALLY_SET(r, re_shrink_n);
 
   LOG("\tafter shrinking mremap with %lu ===\n", re_shrink_n);
   ensuring_free(r);
+  MM_ASSERT_MARKER(MUNMAPPED, 1);
 }
 
 static void test_realloc_from_main_to_mmapped(void) {
@@ -699,14 +729,11 @@ static void test_realloc_from_main_to_mmapped(void) {
 
   const size_t n = 5;
   char *p = (char *)ensuring_malloc(n);
-  TEST_CHECK(p);
-  for (size_t i = 0; i < n; i++)
-    p[i] = (char)(i % 128);
+  TEST_ASSERT(p);
+  SET_BYTES_INCREMENTALLY(p, n);
 
   MM_ASSERT_MARKER(BY_MMAPPING, 0);
   MM_ASSERT_MARKER(BY_SBRKING, 1);
-  MM_RESET_MARKER(BY_SBRKING);
-  MM_RESET_MARKER(MALLOC_CALLED);
 
   LOG("\tpost-malloc with size %lu and setting values for data ===\n", n);
 
@@ -721,17 +748,14 @@ static void test_realloc_from_main_to_mmapped(void) {
   MM_ASSERT_MARKER(MALLOC_CALLED, 1);
   MM_ASSERT_MARKER(BY_MMAPPING, 1);
   MM_ASSERT_MARKER(BY_SBRKING, 0);
-  MM_RESET_MARKER(BY_MMAPPING);
   MM_ASSERT_MARKER(FREE_CALLED, 1);
+  MM_ASSERT_MARKER(RELEASED, 1);
   ensure_freed();
-  MM_RESET_MARKER(FREE_CALLED);
 
-  for (size_t i = 0; i < n; i++) {
-    TEST_CHECK_(q[i] == (char)(i % 128), "[%lu] exp: '%c' != got: '%c'", i,
-                (char)(i % 128), q[i]);
-  }
+  ASSERT_BYTES_ARE_INCREMENTALLY_SET(q, n);
 
   ensuring_free(q);
+  MM_ASSERT_MARKER(MUNMAPPED, 1);
 }
 
 static void test_realloc_from_mmapped_to_main(void) {
@@ -739,14 +763,11 @@ static void test_realloc_from_mmapped_to_main(void) {
 
   const size_t n = MMAP_SIZE(5);
   char *p = (char *)ensuring_malloc(n);
-  TEST_CHECK(p);
-  for (size_t i = 0; i < n; i++)
-    p[i] = (char)(i % 128);
+  TEST_ASSERT(p);
+  SET_BYTES_INCREMENTALLY(p, n);
 
   MM_ASSERT_MARKER(BY_MMAPPING, 1);
   MM_ASSERT_MARKER(BY_SBRKING, 0);
-  MM_RESET_MARKER(BY_MMAPPING);
-  MM_RESET_MARKER(MALLOC_CALLED);
 
   LOG("\tpost-malloc with size %lu and setting values for data ===\n", n);
 
@@ -757,21 +778,18 @@ static void test_realloc_from_mmapped_to_main(void) {
 
   MM_ASSERT_MARKER(MMAP_TO_SBRK, 1);
   MM_ASSERT_MARKER(MMAPPED_BIGGER, 0);
+  MM_ASSERT_MARKER(MUNMAPPED, 1);
   MM_ASSERT_MARKER(MUNMAPPED_EXCESS, 0);
   MM_ASSERT_MARKER(MALLOC_CALLED, 1);
   MM_ASSERT_MARKER(BY_MMAPPING, 0);
   MM_ASSERT_MARKER(BY_SBRKING, 1);
-  MM_RESET_MARKER(BY_SBRKING);
   MM_ASSERT_MARKER(FREE_CALLED, 1);
   ensure_freed();
-  MM_RESET_MARKER(FREE_CALLED);
 
-  for (size_t i = 0; i < re_grow_n; i++) {
-    TEST_CHECK_(q[i] == (char)(i % 128), "[%lu] exp: '%c' != got: '%c'", i,
-                (char)(i % 128), q[i]);
-  }
+  ASSERT_BYTES_ARE_INCREMENTALLY_SET(q, re_grow_n);
 
   ensuring_free(q);
+  MM_ASSERT_MARKER(RELEASED, 1);
 }
 
 static void test_bare_bin_index(void) {
