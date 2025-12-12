@@ -29,7 +29,7 @@ __attribute__((constructor)) void init_lsb_encodable_cap_and_masks(void) {
   LSB_ENCODABLE_ONLY_MASK = LSB_ENCODABLE_CAP - 1;
 }
 
-size_t get_true_size(BlockPtr b) {
+size_t get_true_size(const BlockPtr b) {
   return (b->size & LSB_ENCODABLE_ERASURE_MASK);
 }
 
@@ -39,10 +39,10 @@ static inline size_t *get_footer_of(BlockPtr b) {
 }
 
 // Assuming we know that the previous block is free
-size_t prev_size(BlockPtr b) { return *((size_t *)b - 1); }
+size_t prev_size(const BlockPtr b) { return *((size_t *)b - 1); }
 
 // Assuming we know that the previous block is free
-BlockPtr prev(BlockPtr b) {
+BlockPtr prev(const BlockPtr b) {
   int p_size = (int)prev_size(b);
   return (BlockPtr)((char *)b - (p_size + (int)SIZE_OF_BLOCK));
 }
@@ -50,7 +50,8 @@ BlockPtr prev(BlockPtr b) {
 #define SET 1
 #define UNSET 0
 
-static void encode(BlockPtr b, enum LSB_Flag __LSB_ENCODABLE flag, int set) {
+static void encode(BlockPtr b, enum LSB_Flag __LSB_ENCODABLE flag,
+                   const int set) {
   MM_ASSERT(flag < LSB_ENCODABLE_CAP);
   if (set)
     b->size |= (size_t)flag;
@@ -58,17 +59,19 @@ static void encode(BlockPtr b, enum LSB_Flag __LSB_ENCODABLE flag, int set) {
     b->size &= (~(size_t)flag);
 }
 
-size_t get_flags(BlockPtr b) { return (b->size & LSB_ENCODABLE_ONLY_MASK); }
+size_t get_flags(const BlockPtr b) {
+  return (b->size & LSB_ENCODABLE_ONLY_MASK);
+}
 
 void set_flags(BlockPtr b, size_t flags) { encode(b, flags, SET); }
 
-int is_mmapped(BlockPtr b) { return (b->size & (size_t)MMAPPED) > 0; }
+int is_mmapped(const BlockPtr b) { return (b->size & (size_t)MMAPPED) > 0; }
 
 void mark_as_mmapped(BlockPtr b) { encode(b, MMAPPED, SET); }
 
-int is_free(BlockPtr b) { return (b->size & (size_t)FREE) > 0; }
+int is_free(const BlockPtr b) { return (b->size & (size_t)FREE) > 0; }
 
-int is_prev_free(BlockPtr b) { return (b->size & (size_t)PREV_FREE) > 0; }
+int is_prev_free(const BlockPtr b) { return (b->size & (size_t)PREV_FREE) > 0; }
 
 static inline void put_size_in_footer(BlockPtr b) {
   size_t *footer = get_footer_of(b);
@@ -81,7 +84,7 @@ static inline void mark_prev_as_used(BlockPtr b) {
   encode(b, PREV_FREE, UNSET);
 }
 
-void propagate_free_to_next(BlockPtr b) {
+void propagate_free_to_next(const BlockPtr b) {
   put_size_in_footer(b);
 
   BlockPtr nxt = next(b);
@@ -90,7 +93,7 @@ void propagate_free_to_next(BlockPtr b) {
   }
 }
 
-void propagate_used_to_next(BlockPtr b) {
+void propagate_used_to_next(const BlockPtr b) {
   BlockPtr nxt = next(b);
   if (!is_at_brk(nxt)) {
     mark_prev_as_used(nxt);
@@ -115,16 +118,16 @@ void transfer_flags(BlockPtr from, BlockPtr to) {
   set_flags(to, flags);
 }
 
-void *allocated_memory(BlockPtr b) {
+void *allocated_memory(const BlockPtr b) {
   char *e = (char *)b + SIZE_OF_BLOCK;
   return ((void *)e);
 }
 
-void *next(BlockPtr b) {
+void *next(const BlockPtr b) {
   return (void *)((char *)allocated_memory(b) + get_true_size(b));
 }
 
-int is_at_brk(BlockPtr b) { return (void *)b >= CURRENT_BRK; }
+int is_at_brk(const BlockPtr b) { return (void *)b >= CURRENT_BRK; }
 
 // NOTE: Does not handle head/tail of arenas, those have to be handled within
 // the arena
@@ -137,7 +140,7 @@ void switch_places_in_list(BlockPtr rem, BlockPtr put) {
     put->next->prev = put;
 }
 
-void remove_from_linkedlist(BlockPtr blk) {
+void remove_from_linkedlist(const BlockPtr blk) {
   BlockPtr prev = blk->prev;
   BlockPtr next = blk->next;
   if (prev)
@@ -146,7 +149,7 @@ void remove_from_linkedlist(BlockPtr blk) {
     next->prev = prev;
 }
 
-void deep_copy_user_memory(BlockPtr src, BlockPtr to) {
+void deep_copy_user_memory(const BlockPtr src, BlockPtr to) {
   // int* seems to be UB, to be safe and truly type agnostic, we treat it byte
   // by byte
   unsigned char *src_user_mem = (unsigned char *)allocated_memory(src);
@@ -182,9 +185,6 @@ void fuse_fwd(BlockPtr b) {
   }
 }
 
-// Head always has its prev_free marker unset.
-extern void print_list_into_stderr(void);
-
 void fuse_bwd(BlockPtr *b) {
   if (!is_free(*b)) {
     return;
@@ -210,14 +210,14 @@ void fuse_bwd(BlockPtr *b) {
   *b = cursor;
 }
 
-int is_next_fusable(BlockPtr b) {
-  BlockPtr fw = next(b);
+int is_next_fusable(const BlockPtr b) {
+  const BlockPtr fw = next(b);
   return (!is_at_brk(fw) && (is_free(fw)));
 }
 
 /* ----- splitting ------ */
 
-int is_splittable(BlockPtr blk, size_t aligned_size) {
+int is_splittable(const BlockPtr blk, const size_t aligned_size) {
   if (is_mmapped(blk))
     return 0;
   size_t remaining_size = get_true_size(blk) - aligned_size;
@@ -226,7 +226,7 @@ int is_splittable(BlockPtr blk, size_t aligned_size) {
   return (remaining_size > min_splittable_total_block_size);
 }
 
-void split_block(BlockPtr b, size_t aligned_size_to_shrink) {
+void split_block(BlockPtr b, const size_t aligned_size_to_shrink) {
   size_t bs_flags = get_flags(b);
   BlockPtr rem_free =
       (BlockPtr)((char *)allocated_memory(b) + aligned_size_to_shrink);
@@ -243,6 +243,6 @@ void split_block(BlockPtr b, size_t aligned_size_to_shrink) {
 }
 
 BlockPtr reconstruct_from_user_memory(const void *p) {
-  char *b = (char *)p - SIZE_OF_BLOCK;
+  const char *b = (char *)p - SIZE_OF_BLOCK;
   return ((BlockPtr)b);
 }

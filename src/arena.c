@@ -9,7 +9,7 @@ extern size_t SIZE_OF_BLOCK;
 
 // in case update < 0, it is assumed that |update| bytes are released i.e.
 // returned to OS/munmapped
-void allocated_bytes_update(size_t *total_bytes_allocated, int update) {
+void allocated_bytes_update(size_t *total_bytes_allocated, const int update) {
   size_t allocated_bytes = *total_bytes_allocated;
   if (update >= 0) {
     allocated_bytes += update;
@@ -21,13 +21,11 @@ void allocated_bytes_update(size_t *total_bytes_allocated, int update) {
   *total_bytes_allocated = allocated_bytes;
 }
 
-int sbrked_header_validation(BlockPtr cand) {
+static int sbrked_header_validation(const BlockPtr cand) {
   if (is_at_brk(cand))
     return 0;
-  BlockPtr fw = next(cand);
-  if (!is_at_brk(fw) && (is_free(cand) != is_prev_free(fw)))
-    return 0;
-  return 1;
+  const BlockPtr fw = next(cand);
+  return is_at_brk(fw) || (is_free(cand) == is_prev_free(fw));
 }
 
 BlockPtr reconstruct_valid_header(void *p) {
@@ -45,7 +43,7 @@ BlockPtr reconstruct_valid_header(void *p) {
   return blk;
 }
 
-BlockPtr get_block_from_mmapped_arena(MMapArenaPtr ar_ptr, void *p) {
+BlockPtr get_block_from_mmapped_arena(const MMapArenaPtr ar_ptr, void *p) {
   BlockPtr b = ar_ptr->head;
   if (b == NULL)
     return NULL;
@@ -66,9 +64,9 @@ BlockPtr get_block_from_mmapped_arena(MMapArenaPtr ar_ptr, void *p) {
   return reconstruct_valid_header(p);
 }
 
-BlockPtr get_block_from_main_arena(ArenaPtr ar_ptr, void *p) {
-  BlockPtr head = ar_ptr->head;
-  BlockPtr tail = ar_ptr->tail;
+BlockPtr get_block_from_main_arena(const ArenaPtr ar_ptr, void *p) {
+  const BlockPtr head = ar_ptr->head;
+  const BlockPtr tail = ar_ptr->tail;
   if (head == NULL)
     return NULL;
 

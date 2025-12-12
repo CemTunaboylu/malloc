@@ -32,8 +32,10 @@ __attribute__((constructor)) void init_num_bits_spared_from_alignment(void) {
   NUM_BITS_SPARED_FROM_ALIGNMENT = log2(MAX_ALIGNMENT);
 }
 
-static size_t align_up(size_t any, size_t to) {
+static size_t align_up(const size_t any, const size_t to) {
   size_t shft = NUM_BITS_SPARED_FROM_ALIGNMENT;
   return (((any - 1) >> shft) << shft) + to;
 }
-size_t align_up_fundamental(size_t a) { return align_up(a, MAX_ALIGNMENT); }
+size_t align_up_fundamental(const size_t a) {
+  return align_up(a, MAX_ALIGNMENT);
+}

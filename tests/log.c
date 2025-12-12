@@ -40,7 +40,7 @@ void logf_nonalloc(const char *fmt, ...) {
   debug_write_str_fd(global_test_log_fd, buf);
 }
 
-static inline void print_blk(int fd, BlockPtr b) {
+static inline void print_blk(const int fd, const BlockPtr b) {
   debug_write_str_fd(fd, "[ size:");
   debug_write_u64_fd(fd, get_true_size(b));
   debug_write_str_fd(fd, " - free:");
@@ -52,14 +52,14 @@ static inline void print_blk(int fd, BlockPtr b) {
   debug_write_str_fd(fd, "]\n");
 }
 
-static inline void print_arrow(int fd) {
+static inline void print_arrow(const int fd) {
   debug_write_str_fd(fd, "                |\n");
   debug_write_str_fd(fd, "                |\n");
   debug_write_str_fd(fd, "                v\n");
 }
 
-void print_list_into_fd(int fd) {
-  BlockPtr head = a_head.head;
+void print_list_into_fd(const int fd) {
+  const BlockPtr head = a_head.head;
   if (head == NULL)
     return;
 
@@ -74,7 +74,7 @@ void print_list_into_fd(int fd) {
 }
 
 void print_list_into_stderr(void) {
-  int fd = fileno(stderr);
+  const int fd = fileno(stderr);
   print_list_into_fd(fd);
 }
 

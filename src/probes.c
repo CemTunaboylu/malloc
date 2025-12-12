@@ -12,18 +12,18 @@ size_t _mm_bytes_obtained_from_os(void) { return total_global_bytes_from_os; }
 
 // Predicate type: functions that inspect a block and return non-zero if it
 // matches.
-typedef int (*block_predicate_t)(BlockPtr *b);
+typedef int (*block_predicate_t)(const BlockPtr *b);
 
 // Example predicates used by tests.
-static int pred_is_free(BlockPtr b) { return is_free(b); }
-static int pred_is_used(BlockPtr b) { return !is_free(b); }
-static int pred_true(BlockPtr b) {
+static int pred_is_free(const BlockPtr b) { return is_free(b); }
+static int pred_is_used(const BlockPtr b) { return !is_free(b); }
+static int pred_true(const BlockPtr b) {
   (void)b;
   return 1;
 }
 
 // Count blocks that satisfy a given predicate.
-size_t _mm_blocks(int (*predicate)(BlockPtr)) {
+size_t _mm_blocks(int (*predicate)(const BlockPtr)) {
   if (a_head.head == NULL)
     return 0;
   size_t c = 0;

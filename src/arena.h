@@ -136,9 +136,9 @@ struct MMapArena {
   size_t num_mmapped_regions;
 };
 
-BlockPtr get_block_from_main_arena(ArenaPtr, void *);
-BlockPtr get_block_from_mmapped_arena(MMapArenaPtr, void *);
-void allocated_bytes_update(size_t *, int);
+BlockPtr get_block_from_main_arena(const ArenaPtr, void *);
+BlockPtr get_block_from_mmapped_arena(const MMapArenaPtr, void *);
+void allocated_bytes_update(size_t *, const int);
 
 extern void debug_write_str(const char *);
 extern void debug_write_ptr(const void *);

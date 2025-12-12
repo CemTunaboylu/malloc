@@ -33,7 +33,7 @@ enum Allocation {
   MMAP,
 };
 
-enum Allocation allocation_type_for(size_t aligned_size) {
+enum Allocation allocation_type_for(const size_t aligned_size) {
   return ((aligned_size > MIN_CAP_FOR_MMAP) ? MMAP : SBRK);
 }
 
@@ -43,7 +43,7 @@ void *MALLOC(size_t);
 void *REALLOC(void *p, size_t size);
 
 extern size_t SIZE_OF_BLOCK;
-extern int is_at_brk(BlockPtr);
+extern int is_at_brk(const BlockPtr);
 
 /* ----- arena ----- */
 
@@ -83,16 +83,16 @@ static inline BlockPtr get_block_from_arenas(void *p) {
   return bp;
 }
 
-static inline void correct_tail_if_eaten(BlockPtr blk) {
+static inline void correct_tail_if_eaten(const BlockPtr blk) {
   int is_tail_eaten =
       (blk < a_head.tail) && ((void *)a_head.tail < (void *)next(blk));
   if (is_tail_eaten)
     a_head.tail = blk;
 }
 
-static inline void insert_into_belonging_arena(BlockPtr b,
-                                               size_t total_bytes_to_allocated,
-                                               enum Allocation allocation) {
+static inline void
+insert_into_belonging_arena(BlockPtr b, const size_t total_bytes_to_allocated,
+                            enum Allocation allocation) {
   size_t *allocated_bytes_ptr;
   BlockPtr *tail;
   if (allocation == MMAP) {
@@ -122,9 +122,9 @@ static inline void insert_into_belonging_arena(BlockPtr b,
   allocated_bytes_update(allocated_bytes_ptr, total_bytes_to_allocated);
 }
 
-BlockPtr extend_heap(size_t aligned_size, enum Allocation allocation) {
+BlockPtr extend_heap(const size_t aligned_size, enum Allocation allocation) {
   BlockPtr b = CURRENT_BRK;
-  size_t total_bytes_to_allocate = SIZE_OF_BLOCK + aligned_size;
+  const size_t total_bytes_to_allocate = SIZE_OF_BLOCK + aligned_size;
   void *requested;
   if (allocation == MMAP) {
     requested = mm_mmap(total_bytes_to_allocate);
@@ -209,14 +209,14 @@ static inline void insert_in_appropriate_bin(BlockPtr blk) {
     insert_in_unsorted_bin(blk);
 }
 
-static inline BlockPtr fast_find(size_t aligned_size) {
+static inline BlockPtr fast_find(const size_t aligned_size) {
   int can_be_fast = CAN_BE_FAST_BINNED(aligned_size);
   if (!can_be_fast) {
     return NULL;
   }
-  size_t idx = GET_FAST_BIN_IDX(aligned_size);
+  const size_t idx = GET_FAST_BIN_IDX(aligned_size);
   // NOTE: fastbins are singly-linked
-  BlockPtr head = a_head.fastbins[idx];
+  const BlockPtr head = a_head.fastbins[idx];
   if (head == NULL)
     return NULL;
 
@@ -226,7 +226,7 @@ static inline BlockPtr fast_find(size_t aligned_size) {
 }
 
 // Assuming that, we alreaedy checked for < MIN_CAP_FOR_MMAP.
-static inline BlockPtr find_in_bins(size_t aligned_size) {
+static inline BlockPtr find_in_bins(const size_t aligned_size) {
   // check if there is an appropriate sized bin from bitmap
   if (IS_SMALL(aligned_size)) {
     size_t bare_idx = GET_BARE_BIN_IDX(aligned_size);
@@ -245,7 +245,7 @@ static inline BlockPtr find_in_bins(size_t aligned_size) {
 
 // We don't search on mmapped arenas, cannot find a free block in it's list
 // because when it is freed, we munmap it immediately.
-BlockPtr first_fit_find(size_t aligned_size) {
+BlockPtr best_fit_find(size_t aligned_size) {
   // first check the fast bins
   BlockPtr blk = fast_find(aligned_size);
 
@@ -266,7 +266,7 @@ void *CALLOC(size_t len, size_t size_of) {
   if (size_of != 0 && len > (SIZE_MAX / size_of)) {
     return NULL;
   }
-  size_t total_bytes = len * size_of;
+  const size_t total_bytes = len * size_of;
   unsigned char *p = (unsigned char *)MALLOC(total_bytes);
   if (p == NULL) {
     return NULL;
@@ -277,7 +277,7 @@ void *CALLOC(size_t len, size_t size_of) {
   return p;
 }
 
-static inline void munmap(BlockPtr blk) {
+static inline void munmap(const BlockPtr blk) {
   int is_at_tail = (!blk->next);
   int is_at_head = (!blk->prev);
   size_t back = SIZE_OF_BLOCK + get_true_size(blk);
@@ -383,7 +383,7 @@ void FREE(void *p) {
   free_or_maybe_release_sbrked(blk);
 }
 
-static inline void split(BlockPtr blk, size_t aligned_size) {
+static inline void split(BlockPtr blk, const size_t aligned_size) {
   split_block(blk, aligned_size);
   BlockPtr nxt = next(blk);
   if (a_head.tail == blk) {
@@ -397,7 +397,7 @@ void *MALLOC(size_t size) {
   if (size == 0)
     return NULL;
 
-  size_t aligned_size = align(size);
+  const size_t aligned_size = align(size);
   enum Allocation allocation = allocation_type_for(aligned_size);
   BlockPtr blk;
 
@@ -405,7 +405,7 @@ void *MALLOC(size_t size) {
     // extend_heap sets the head if it finds out that it is null
     blk = extend_heap(aligned_size, allocation);
   } else {
-    blk = first_fit_find(aligned_size);
+    blk = best_fit_find(aligned_size);
     if ((blk == NULL) || is_at_brk(blk)) {
       // if failed nothing to do, if not block is not larger than size
       blk = extend_heap(aligned_size, allocation);
@@ -425,13 +425,13 @@ void *MALLOC(size_t size) {
 }
 
 static inline void *realloc_from_mmap_to_mmap(BlockPtr blk,
-                                              size_t aligned_size) {
-  size_t true_size = get_true_size(blk);
+                                              const size_t aligned_size) {
+  const size_t true_size = get_true_size(blk);
   void *p = allocated_memory(blk);
   // We have more than we need, munmap the unneeded part from the end, and
   // return the same pointer. Nothing in the arena linkedlist changes.
-  size_t full_aligned_size = SIZE_OF_BLOCK + aligned_size;
-  size_t full_old_size = SIZE_OF_BLOCK + true_size;
+  const size_t full_aligned_size = SIZE_OF_BLOCK + aligned_size;
+  const size_t full_old_size = SIZE_OF_BLOCK + true_size;
 
   struct SBlock mock_blk = {
       .next = blk->next,
@@ -448,8 +448,8 @@ static inline void *realloc_from_mmap_to_mmap(BlockPtr blk,
   } else {
     MM_MARK(MMAPPED_BIGGER);
   }
-  size_t flagged_size = blk->size;
-  size_t size_update = aligned_size - true_size;
+  const size_t flagged_size = blk->size;
+  const size_t size_update = aligned_size - true_size;
   allocated_bytes_update(&ma_head.total_bytes_allocated, size_update);
 
   BlockPtr new_blk = (BlockPtr)new;
@@ -473,7 +473,7 @@ static inline void *realloc_from_mmap_to_mmap(BlockPtr blk,
 }
 
 static inline void *realloc_btw_main_and_mmapped(BlockPtr blk,
-                                                 size_t aligned_size) {
+                                                 const size_t aligned_size) {
   void *new = MALLOC(aligned_size);
   if (IS_FAILED_BY_PTR(new))
     return allocated_memory(blk);
@@ -486,17 +486,17 @@ static inline void *realloc_btw_main_and_mmapped(BlockPtr blk,
 }
 
 static inline void *realloc_from_sbrk_to_mmap(BlockPtr blk,
-                                              size_t aligned_size) {
+                                              const size_t aligned_size) {
   MM_MARK(SBRK_TO_MMAP);
   return realloc_btw_main_and_mmapped(blk, aligned_size);
 }
 static inline void *realloc_from_mmap_to_sbrk(BlockPtr blk,
-                                              size_t aligned_size) {
+                                              const size_t aligned_size) {
   MM_MARK(MMAP_TO_SBRK);
   return realloc_btw_main_and_mmapped(blk, aligned_size);
 }
 
-void *realloc_from_sbrk_to_sbrk(BlockPtr blk, size_t aligned_size) {
+void *realloc_from_sbrk_to_sbrk(BlockPtr blk, const size_t aligned_size) {
   // Try to grow in-place (if needed), note that we only try to grow forward.
   while (get_true_size(blk) < aligned_size && fuse_next(blk) != -1) {
   }
@@ -539,17 +539,16 @@ void *REALLOC(void *p, size_t size) {
     return NULL;
 
   size = align_up_fundamental(size);
-  size_t true_size = get_true_size(blk);
 
-  if (true_size == size)
+  if (get_true_size(blk) == size)
     return p;
 
   enum Allocation new_allocation = allocation_type_for(size);
-  int from_mmapped = is_mmapped(blk);
-  int to_mmapped = MMAP == new_allocation;
+  const int from_mmapped = is_mmapped(blk);
+  const int to_mmapped = MMAP == new_allocation;
 
   // <is currently mmapped><will be mapped>
-  int from_to = (from_mmapped << 1) | to_mmapped;
+  const int from_to = (from_mmapped << 1) | to_mmapped;
 
   switch (from_to) {
   case 0: // 00 : SBRK->SBRK
