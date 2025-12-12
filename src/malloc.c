@@ -475,8 +475,7 @@ static inline void *realloc_from_mmap_to_sbrk(BlockPtr blk,
 }
 
 void *realloc_from_sbrk_to_sbrk(BlockPtr blk, size_t aligned_size) {
-  // try to grow in-place
-  // TODO: can grow backwards as well, but will change this anyway
+  // Try to grow in-place, note that we only try to grow towards the next.
   while (get_true_size(blk) < aligned_size && fuse_next(blk) != -1) {
   }
   correct_tail_if_eaten(blk);
