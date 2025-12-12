@@ -29,6 +29,8 @@ extern void _mm_tear_down_allocator(void);
 // test probes use a_head, thus we need to make it external
 extern struct Arena a_head;
 extern struct MMapArena ma_head;
+
+void prepend(BlockPtr sentinel, BlockPtr new_next);
 #endif
 
 #define CURRENT_BRK mm_sbrk(0)

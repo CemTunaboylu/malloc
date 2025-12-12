@@ -57,6 +57,7 @@ void mark_as_mmapped(BlockPtr);
 void mark_as_used(BlockPtr);
 void propagate_free_to_next(BlockPtr);
 void propagate_used_to_next(BlockPtr);
+void remove_from_linkedlist(BlockPtr);
 void split_block(BlockPtr, size_t);
 void switch_places_in_list(BlockPtr rem, BlockPtr put);
 void transfer_flags(BlockPtr from, BlockPtr to);

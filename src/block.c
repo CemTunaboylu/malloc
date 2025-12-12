@@ -137,6 +137,15 @@ void switch_places_in_list(BlockPtr rem, BlockPtr put) {
     put->next->prev = put;
 }
 
+void remove_from_linkedlist(BlockPtr blk) {
+  BlockPtr prev = blk->prev;
+  BlockPtr next = blk->next;
+  if (prev)
+    prev->next = next;
+  if (next)
+    next->prev = prev;
+}
+
 void deep_copy_user_memory(BlockPtr src, BlockPtr to) {
   // int* seems to be UB, to be safe and truly type agnostic, we treat it byte
   // by byte
@@ -177,7 +186,6 @@ void fuse_fwd(BlockPtr b) {
 extern void print_list_into_stderr(void);
 
 void fuse_bwd(BlockPtr *b) {
-  // TODO: cannot assert this, realloc may fuse with a prev block
   if (!is_free(*b)) {
     return;
   }
@@ -192,7 +200,8 @@ void fuse_bwd(BlockPtr *b) {
     MM_MARK(FUSE_BWD_CALLED);
   } while (is_prev_free(cursor));
 
-  // TODO: cannot assert this , realloc may fuse with a prev block
+  // We can assert this because realloc never tries to fuse with a previous
+  // chunk, since it would have to move the user data to the previous chunk(s).
   MM_ASSERT(is_free(cursor));
   if (is_free(cursor))
     propagate_free_to_next(cursor);

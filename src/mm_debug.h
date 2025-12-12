@@ -21,7 +21,9 @@
 #define PUT_IN_UNSORTED_BIN 18
 #define FASTBINNED 19
 #define PUT_IN_FASTBIN 20
-#define END_MARKERS 21
+#define BINNED 21
+#define DOUBLE_FREE 22
+#define END_MARKERS 23
 
 #ifdef TESTING
 #include <internal.h>

@@ -162,18 +162,6 @@ BlockPtr extend_heap(size_t aligned_size, enum Allocation allocation) {
   return b;
 }
 
-/* static inline int append_to_fast_bin(BlockPtr blk) { */
-/*   size_t true_size = get_true_size(blk); */
-/*   int can_be_fast = CAN_BE_FAST_BINNED(true_size); */
-/*   if (!can_be_fast) { */
-/*     return -1; */
-/*   } */
-/*   size_t idx = GET_FAST_BIN_IDX(true_size); */
-/*   blk->next = a_head.fastbins[idx]; */
-/*   a_head.fastbins[idx] = blk; */
-/*   return 0; */
-/* } */
-
 /*
  * from:
  *   _____     _____
@@ -183,7 +171,10 @@ BlockPtr extend_heap(size_t aligned_size, enum Allocation allocation) {
  *   _____     _____     _____
  *  |__s__|<->|__N__|<->|__n__|
  */
-static inline void prepend(BlockPtr sentinel, BlockPtr new_next) {
+#ifndef TESTING
+static inline
+#endif
+    void prepend(BlockPtr sentinel, BlockPtr new_next) {
   BlockPtr next = sentinel->next;
   sentinel->next = new_next;
   new_next->next = next;
@@ -194,6 +185,7 @@ static inline void prepend(BlockPtr sentinel, BlockPtr new_next) {
 static inline void insert_in_unsorted_bin(BlockPtr blk) {
   BlockPtr unsorted_sentinel = BLK_PTR_IN_BIN_AT(a_head, 0);
   prepend(unsorted_sentinel, blk);
+  MARK_BIN(a_head, 0);
   MM_MARK(PUT_IN_UNSORTED_BIN);
 }
 
@@ -203,9 +195,8 @@ static inline void insert_in_fastbin(BlockPtr blk) {
   if (a_head.fastbins[idx] == NULL)
     a_head.fastbins[idx] = blk;
   else {
-    BlockPtr next = a_head.fastbins[idx];
+    blk->next = a_head.fastbins[idx];
     a_head.fastbins[idx] = blk;
-    blk->next = next;
   }
   MM_MARK(PUT_IN_FASTBIN);
 }
@@ -234,12 +225,34 @@ static inline BlockPtr fast_find(size_t aligned_size) {
   return head;
 }
 
+// Assuming that, we alreaedy checked for < MIN_CAP_FOR_MMAP.
+static inline BlockPtr find_in_bins(size_t aligned_size) {
+  // check if there is an appropriate sized bin from bitmap
+  if (IS_SMALL(aligned_size)) {
+    size_t bare_idx = GET_BARE_BIN_IDX(aligned_size);
+    // the bin has an element
+    if (READ_BINMAP(a_head, bare_idx)) {
+      BlockPtr sentinel = BLK_PTR_IN_BIN_AT(a_head, bare_idx);
+      BlockPtr tail = sentinel->prev;
+      remove_from_linkedlist(tail);
+      MM_MARK(BINNED);
+      return tail;
+    }
+  }
+  // TODO: can check other small bins that are larger
+  return NULL;
+}
+
 // We don't search on mmapped arenas, cannot find a free block in it's list
 // because when it is freed, we munmap it immediately.
 BlockPtr first_fit_find(size_t aligned_size) {
   // first check the fast bins
   BlockPtr blk = fast_find(aligned_size);
-  return blk;
+
+  if (blk)
+    return blk;
+
+  return find_in_bins(aligned_size);
 }
 
 /* ----- allocators ----- */
@@ -288,17 +301,26 @@ static inline void munmap(BlockPtr blk) {
 }
 
 static inline void free_or_maybe_release_sbrked(BlockPtr blk) {
+  int is_at_tail = (a_head.tail == blk);
+  const int is_near_tail = next(blk) == CURRENT_BRK;
+  const size_t true_size = get_true_size(blk);
+  // If not at tail or near tail and small enough to fast bin, put it in the
+  // fast bin without fusing with any neighbors.
+  if (!is_at_tail && !is_near_tail && CAN_BE_FAST_BINNED(true_size)) {
+    insert_in_fastbin(blk);
+    return;
+  }
+
   fuse_fwd(blk);
   fuse_bwd(&blk);
   correct_tail_if_eaten(blk);
-  const size_t back = SIZE_OF_BLOCK + get_true_size(blk);
+  const size_t back = SIZE_OF_BLOCK + true_size;
 
   const int is_at_head = (a_head.head == blk);
-  const int is_at_tail = (a_head.tail == blk);
+  is_at_tail = (a_head.tail == blk);
 
-  // If the chunk is not at tail, put it into appropriate bin (fast or unsorted)
   if (!is_at_tail) {
-    insert_in_appropriate_bin(blk);
+    insert_in_unsorted_bin(blk);
     return;
   }
 
@@ -327,7 +349,7 @@ static inline int is_double_free(BlockPtr blk) {
   if (!is_free(blk))
     return 0;
 #ifdef TESTING
-  MM_ASSERT(0);
+  MM_MARK(DOUBLE_FREE);
 #else
   debug_write_str("double free: ");
   debug_write_ptr(p);
@@ -475,7 +497,7 @@ static inline void *realloc_from_mmap_to_sbrk(BlockPtr blk,
 }
 
 void *realloc_from_sbrk_to_sbrk(BlockPtr blk, size_t aligned_size) {
-  // Try to grow in-place, note that we only try to grow towards the next.
+  // Try to grow in-place (if needed), note that we only try to grow forward.
   while (get_true_size(blk) < aligned_size && fuse_next(blk) != -1) {
   }
   correct_tail_if_eaten(blk);

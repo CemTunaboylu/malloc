@@ -17,16 +17,19 @@ extern const size_t MAX_ALIGNMENT;
 // To be able to pull the repositioning trick to first element,
 // we need a buffer with the size of the rest of the block.
 #define OFFSET_OF_NEXT offsetof(struct SBlock, next)
+// How many size_t slots we need for storing/mimicking the rest of the block
+// (above the next).
 #define SLOTS_FOR_BLOCK_OFFSET_ALIGNMENT (OFFSET_OF_NEXT / sizeof(size_t))
 #define BLOCK_OFFSET_ALIGNED_IX(ix) (ix + SLOTS_FOR_BLOCK_OFFSET_ALIGNMENT)
 
 #define NUM_SLOTS_IN_BIN (SLOTS_FOR_BLOCK_OFFSET_ALIGNMENT + NUM_BINS * 2)
+#define CAP_CALC(start, num, step_size) (start + (num - 1) * step_size)
 
 #define NUM_SMALL_BINS (64)
 #define SMALL_BIN_SIZE_START (ALIGNMENT)
 #define SMALL_BIN_STEP (ALIGNMENT)
 #define SMALL_BIN_SIZE_CAP                                                     \
-  (SMALL_BIN_SIZE_START + NUM_SMALL_BINS * SMALL_BIN_STEP - 1)
+  CAP_CALC(SMALL_BIN_SIZE_START, NUM_SMALL_BINS, SMALL_BIN_STEP)
 
 #define IS_SMALL(req_aligned_size) (req_aligned_size < SMALL_BIN_SIZE_CAP)
 
@@ -39,13 +42,14 @@ extern const size_t MAX_ALIGNMENT;
 // territory.
 #define LARGE_BIN_STEP (2048)
 #define LARGE_BIN_SIZE_CAP                                                     \
-  (LARGE_BIN_SIZE_START + LARGE_BIN_STEP * NUM_LARGE_BINS - 1)
+  CAP_CALC(LARGE_BIN_SIZE_START, LARGE_BIN_STEP, NUM_LARGE_BINS)
 #define LARGE_BIN_IDX_SHIFT(idx) (size_t)(1 + NUM_SMALL_BINS + idx)
 
 #define NUM_FAST_BINS (10)
 #define FAST_BIN_SIZE_START (ALIGNMENT)
 #define FAST_BIN_STEP (ALIGNMENT)
-#define FAST_BIN_SIZE_CAP (FAST_BIN_SIZE_START + ALIGNMENT * FAST_BIN_STEP - 1)
+#define FAST_BIN_SIZE_CAP                                                      \
+  CAP_CALC(FAST_BIN_SIZE_START, NUM_FAST_BINS, FAST_BIN_STEP)
 
 #define MAP_STEP_BY_TYPE_WIDTH (sizeof(MAP_ELMNT_TYPE) * 8)
 #define NUM_ELMNTS_NECESSARY_TO_MAP ((NUM_BINS) / MAP_STEP_BY_TYPE_WIDTH)
