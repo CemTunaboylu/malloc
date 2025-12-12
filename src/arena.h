@@ -83,6 +83,12 @@ extern const size_t MAX_ALIGNMENT;
    aligned_req_size <= FAST_BIN_SIZE_CAP)
 #define GET_FAST_BIN_IDX(aligned_req_size)                                     \
   (aligned_req_size / FAST_BIN_STEP - 1)
+
+#define MOVE_FAST_BIN_TO_NEXT(a, ix)                                           \
+  {                                                                            \
+    a.fastbins[idx] = a.fastbins[idx]->next;                                   \
+  }
+
 // Note: thread-safety is not a concern at the moment,
 // thus we only have 2 arenas: sbrk arena and mmap arena.
 struct Arena {

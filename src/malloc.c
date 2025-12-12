@@ -162,18 +162,84 @@ BlockPtr extend_heap(size_t aligned_size, enum Allocation allocation) {
   return b;
 }
 
+/* static inline int append_to_fast_bin(BlockPtr blk) { */
+/*   size_t true_size = get_true_size(blk); */
+/*   int can_be_fast = CAN_BE_FAST_BINNED(true_size); */
+/*   if (!can_be_fast) { */
+/*     return -1; */
+/*   } */
+/*   size_t idx = GET_FAST_BIN_IDX(true_size); */
+/*   blk->next = a_head.fastbins[idx]; */
+/*   a_head.fastbins[idx] = blk; */
+/*   return 0; */
+/* } */
+
+/*
+ * from:
+ *   _____     _____
+ *  |__s__|<->|__n__|
+ *
+ *  to:
+ *   _____     _____     _____
+ *  |__s__|<->|__N__|<->|__n__|
+ */
+static inline void prepend(BlockPtr sentinel, BlockPtr new_next) {
+  BlockPtr next = sentinel->next;
+  sentinel->next = new_next;
+  new_next->next = next;
+  next->prev = new_next;
+  new_next->prev = sentinel;
+}
+
+static inline void insert_in_unsorted_bin(BlockPtr blk) {
+  BlockPtr unsorted_sentinel = BLK_PTR_IN_BIN_AT(a_head, 0);
+  prepend(unsorted_sentinel, blk);
+  MM_MARK(PUT_IN_UNSORTED_BIN);
+}
+
+static inline void insert_in_fastbin(BlockPtr blk) {
+  const size_t true_size = get_true_size(blk);
+  const size_t idx = GET_FAST_BIN_IDX(true_size);
+  if (a_head.fastbins[idx] == NULL)
+    a_head.fastbins[idx] = blk;
+  else {
+    BlockPtr next = a_head.fastbins[idx];
+    a_head.fastbins[idx] = blk;
+    blk->next = next;
+  }
+  MM_MARK(PUT_IN_FASTBIN);
+}
+
+static inline void insert_in_appropriate_bin(BlockPtr blk) {
+  const size_t true_size = get_true_size(blk);
+  if (CAN_BE_FAST_BINNED(true_size))
+    insert_in_fastbin(blk);
+  else
+    insert_in_unsorted_bin(blk);
+}
+
+static inline BlockPtr fast_find(size_t aligned_size) {
+  int can_be_fast = CAN_BE_FAST_BINNED(aligned_size);
+  if (!can_be_fast) {
+    return NULL;
+  }
+  size_t idx = GET_FAST_BIN_IDX(aligned_size);
+  // NOTE: fastbins are singly-linked
+  BlockPtr head = a_head.fastbins[idx];
+  if (head == NULL)
+    return NULL;
+
+  MOVE_FAST_BIN_TO_NEXT(a_head, idx);
+  MM_MARK(FASTBINNED);
+  return head;
+}
+
 // We don't search on mmapped arenas, cannot find a free block in it's list
 // because when it is freed, we munmap it immediately.
 BlockPtr first_fit_find(size_t aligned_size) {
-  if (a_head.head == NULL)
-    return NULL;
-  BlockPtr curr = a_head.head;
-  // while we have block at hand, and it's either NOT free or NOT big enough
-  while (!is_at_brk(curr) &&
-         !(is_free(curr) && get_true_size(curr) >= aligned_size)) {
-    curr = next(curr);
-  }
-  return curr;
+  // first check the fast bins
+  BlockPtr blk = fast_find(aligned_size);
+  return blk;
 }
 
 /* ----- allocators ----- */
@@ -225,12 +291,14 @@ static inline void release_sbrked(BlockPtr blk) {
   fuse_fwd(blk);
   fuse_bwd(&blk);
   correct_tail_if_eaten(blk);
-  size_t back = SIZE_OF_BLOCK + get_true_size(blk);
+  const size_t back = SIZE_OF_BLOCK + get_true_size(blk);
 
-  int is_at_head = (a_head.head == blk);
-  int is_at_tail = (a_head.tail == blk);
+  const int is_at_head = (a_head.head == blk);
+  const int is_at_tail = (a_head.tail == blk);
 
+  // If the chunk is not at tail, put it into appropriate bin (fast or unsorted)
   if (!is_at_tail) {
+    insert_in_appropriate_bin(blk);
     return;
   }
 
@@ -295,9 +363,11 @@ void FREE(void *p) {
 
 static inline void split(BlockPtr blk, size_t aligned_size) {
   split_block(blk, aligned_size);
+  BlockPtr nxt = next(blk);
   if (a_head.tail == blk) {
-    a_head.tail = next(blk);
+    a_head.tail = nxt;
   }
+  insert_in_appropriate_bin(nxt);
 }
 
 void *MALLOC(size_t size) {

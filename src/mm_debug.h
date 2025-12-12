@@ -18,7 +18,10 @@
 #define MMAP_TO_SBRK 15
 #define NEXT_PREV_FREED 16
 #define NEXT_PREV_USED 17
-#define END_MARKERS 18
+#define PUT_IN_UNSORTED_BIN 18
+#define FASTBINNED 19
+#define PUT_IN_FASTBIN 20
+#define END_MARKERS 21
 
 #ifdef TESTING
 #include <internal.h>
