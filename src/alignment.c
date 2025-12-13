@@ -1,8 +1,8 @@
 #include <math.h>
 #include <stdalign.h>
 #include <stddef.h>
+#include <stdint.h>
 #include <sys/types.h>
-
 /*
     _Alignof: operator returns the alignment requirement (in bytes) of type T
     max_align_t: is a type whose alignment is at least as strict as any
@@ -36,6 +36,18 @@ static size_t align_up(const size_t any, const size_t to) {
   size_t shft = NUM_BITS_SPARED_FROM_ALIGNMENT;
   return (((any - 1) >> shft) << shft) + to;
 }
+
+#if (MAX_ALIGNMENT == 8)
+static const size_t OVERFLOW_CAP = (size_t)SIZE_MAX - 7;
+#elif (MAX_ALIGNMENT == 16)
+static const size_t OVERFLOW_CAP = (size_t)SIZE_MAX - 15;
+#else
+static const size_t OVERFLOW_CAP = (size_t)SIZE_MAX - 15;
+#endif
+
 size_t align_up_fundamental(const size_t a) {
+  // Alignment overflow guard
+  if (OVERFLOW_CAP <= a)
+    return align_up(a - MAX_ALIGNMENT, MAX_ALIGNMENT);
   return align_up(a, MAX_ALIGNMENT);
 }
