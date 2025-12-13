@@ -75,10 +75,18 @@ __attribute__((constructor)) void init_main_arena_bins(void) {
   }
 }
 
+static inline int is_at_main_arena_tail(const BlockPtr blk) {
+  return (blk == a_head.tail);
+}
+
+static inline int is_at_main_arena_head(const BlockPtr blk) {
+  return (blk == a_head.head);
+}
+
 static inline BlockPtr get_block_from_arenas(void *p) {
   BlockPtr bp = get_block_from_main_arena(&a_head, p);
   // try mmap arena
-  if (bp == NULL)
+  if (NULL == bp)
     bp = get_block_from_mmapped_arena(&ma_head, p);
   return bp;
 }
@@ -95,7 +103,7 @@ insert_into_belonging_arena(BlockPtr b, const size_t total_bytes_to_allocated,
                             enum Allocation allocation) {
   size_t *allocated_bytes_ptr;
   BlockPtr *tail;
-  if (allocation == MMAP) {
+  if (MMAP == allocation) {
     if (!ma_head.head) {
       ma_head.head = b;
     }
@@ -111,8 +119,7 @@ insert_into_belonging_arena(BlockPtr b, const size_t total_bytes_to_allocated,
 
   // if there is a last, append this block there
   if (*tail && is_free(*tail)) {
-    // handles the flag setting etc. internally
-    mark_as_free(*tail);
+    propagate_free_to_next(*tail);
     if (is_mmapped(b)) {
       b->prev = *tail;
       (*tail)->next = b;
@@ -126,7 +133,7 @@ BlockPtr extend_heap(const size_t aligned_size, enum Allocation allocation) {
   BlockPtr b = CURRENT_BRK;
   const size_t total_bytes_to_allocate = SIZE_OF_BLOCK + aligned_size;
   void *requested;
-  if (allocation == MMAP) {
+  if (MMAP == allocation) {
     requested = mm_mmap(total_bytes_to_allocate);
     MM_MARK(BY_MMAPPING);
   } else {
@@ -138,22 +145,22 @@ BlockPtr extend_heap(const size_t aligned_size, enum Allocation allocation) {
     return NULL;
   }
 
-  if (allocation == SBRK)
+  if (SBRK == allocation)
     MM_ASSERT((void *)b == requested);
 
   b = (BlockPtr)requested;
   b->size = aligned_size;
 
-  if (allocation == MMAP)
+  if (MMAP == allocation)
     mark_as_mmapped(b);
 
   b->next = b->prev = NULL;
   insert_into_belonging_arena(b, total_bytes_to_allocate, allocation);
 
-  if (allocation == SBRK && a_head.head != b) {
+  if (SBRK == allocation && !is_at_main_arena_head(b)) {
     if (is_free(a_head.tail)) {
       BlockPtr bk = prev(b);
-      MM_ASSERT(bk == a_head.tail);
+      MM_ASSERT(is_at_main_arena_tail(bk));
       if (is_free(bk))
         propagate_free_to_next(bk);
     }
@@ -193,7 +200,7 @@ static inline void insert_in_unsorted_bin(BlockPtr blk) {
 static inline void insert_in_fastbin(BlockPtr blk) {
   const size_t true_size = get_true_size(blk);
   const size_t idx = GET_FAST_BIN_IDX(true_size);
-  if (a_head.fastbins[idx] == NULL)
+  if (NULL == a_head.fastbins[idx])
     a_head.fastbins[idx] = blk;
   else {
     blk->next = a_head.fastbins[idx];
@@ -218,7 +225,7 @@ static inline BlockPtr fast_find(const size_t aligned_size) {
   const size_t idx = GET_FAST_BIN_IDX(aligned_size);
   // NOTE: fastbins are singly-linked
   const BlockPtr head = a_head.fastbins[idx];
-  if (head == NULL)
+  if (NULL == head)
     return NULL;
 
   MOVE_FAST_BIN_TO_NEXT(a_head, idx);
@@ -235,12 +242,12 @@ static inline int detaching_fuse_fwd(BlockPtr blk) {
   // from the linkedlist.
   BlockPtr nxt_next = nxt->next;
   const int did_fuse_next = fuse_next(blk);
-  if (did_fuse_next == -1)
+  if (-1 == did_fuse_next)
     return -1;
   if (CAN_BE_FAST_BINNED(true_size)) {
     const size_t n_idx = GET_FAST_BIN_IDX(true_size);
     BlockPtr n_head = a_head.fastbins[n_idx];
-    if (n_head != NULL && n_head == nxt) {
+    if (NULL != n_head && nxt == n_head) {
       a_head.fastbins[n_idx] = nxt_next;
     }
   }
@@ -256,12 +263,12 @@ static inline int detaching_fuse_bwd(BlockPtr *blk) {
   // from the linkedlist.
   BlockPtr prv_next = prv->next;
   const int did_fuse_prev = fuse_prev(blk);
-  if (did_fuse_prev == -1)
+  if (-1 == did_fuse_prev)
     return -1;
   if (CAN_BE_FAST_BINNED(true_size)) {
     const size_t n_idx = GET_FAST_BIN_IDX(true_size);
     BlockPtr n_head = a_head.fastbins[n_idx];
-    if (n_head != NULL && n_head == prv) {
+    if (NULL != n_head && prv == n_head) {
       a_head.fastbins[n_idx] = prv_next;
     }
   }
@@ -295,12 +302,12 @@ static inline
   // Move blocks from fast bins while fusing along the way to unsorted bin.
   for (size_t f_idx = 0; f_idx < NUM_FAST_BINS; f_idx++) {
     BlockPtr head = a_head.fastbins[f_idx];
-    if (head == NULL)
+    if (NULL == head)
       continue;
     MM_MARK(CONSOLIDATED);
     MM_ASSERT(head->next != head);
     BlockPtr heads_next;
-    while (head != NULL) {
+    while (NULL != head) {
       MM_ASSERT(head->next != head);
       MM_ASSERT(is_free(head));
       fuse_fwd(head);
@@ -321,11 +328,13 @@ find_smallest_fitting_large_bin_block(BlockPtr sentinel,
                                       const size_t true_size) {
   // We are in the large bin that the block should be put.
   BlockPtr large = sentinel->next;
-  while (large->next != sentinel && get_true_size(large->next) > true_size) {
+  while (sentinel != large->next && get_true_size(large->next) > true_size) {
     large = large->next;
   }
   return large;
 }
+
+#define IS_BLOCKS_SIZE_ENOUGH(blk, size) (get_true_size(blk) >= size)
 
 #ifndef TESTING
 static inline
@@ -341,11 +350,11 @@ static inline
     return NULL;
   BlockPtr blk = sentinel->next;
   BlockPtr nxt = NULL;
-  while (nxt != sentinel) {
+  while (sentinel != nxt) {
     nxt = next(blk);
     MM_ASSERT(is_free(blk));
     remove_from_linkedlist(blk);
-    if (get_true_size(blk) >= aligned_size) {
+    if (IS_BLOCKS_SIZE_ENOUGH(blk, aligned_size)) {
       remove_from_linkedlist(blk);
       MM_MARK(UNSORTED_BINNED);
       return blk;
@@ -353,7 +362,7 @@ static inline
     fuse_fwd(blk);
     fuse_bwd(&blk);
     correct_tail_if_eaten(blk);
-    if (get_true_size(blk) >= aligned_size) {
+    if (IS_BLOCKS_SIZE_ENOUGH(blk, aligned_size)) {
       remove_from_linkedlist(blk);
       MM_MARK(UNSORTED_BINNED);
       return blk;
@@ -378,7 +387,7 @@ static inline
 
 static inline BlockPtr get_from_small_bin(const size_t aligned_size) {
   size_t bare_idx = GET_BARE_BIN_IDX(aligned_size);
-  // The bin has an element
+  // Check if the exact sized bin has a chunk from bitmap.
   if (READ_BINMAP(a_head, bare_idx) == 0)
     return NULL;
 
@@ -395,9 +404,7 @@ static inline BlockPtr get_from_large_bin(const size_t aligned_size) {
   if (READ_BINMAP(a_head, bare_idx) == 0)
     return NULL;
 
-  BlockPtr sentinel = BLK_PTR_IN_BIN_AT(a_head, bare_idx);
-  // TODO:It must be size ordered, consolidation to large bins, should put them
-  // ordered
+  const BlockPtr sentinel = BLK_PTR_IN_BIN_AT(a_head, bare_idx);
   BlockPtr larger =
       find_smallest_fitting_large_bin_block(sentinel, aligned_size);
   BlockPtr larger_next = larger->next;
@@ -411,7 +418,6 @@ static inline BlockPtr get_from_large_bin(const size_t aligned_size) {
 
 // Assuming that, we alreaedy checked for < MIN_CAP_FOR_MMAP.
 static inline BlockPtr find_in_bins(const size_t aligned_size) {
-  // Check if there is an appropriate sized bin from bitmap
   if (IS_SMALL(aligned_size)) {
     BlockPtr small = get_from_small_bin(aligned_size);
     if (small)
@@ -454,18 +460,18 @@ BlockPtr best_fit_find(size_t aligned_size) {
 
 /* ----- allocators ----- */
 
-// allocate memory for an array of length len consisting of
+// Allocate memory for an array of length len consisting of
 // memory chunks of size size_of (of objects of size_of)
-// properly aligned for object
-// if succeeds, initialize all bytes to 0.
+// properly aligned for object.
+// If succeeds, initialize all bytes to 0.
 void *CALLOC(size_t len, size_t size_of) {
   MM_MARK(CALLOC_CALLED);
-  if (size_of != 0 && len > (SIZE_MAX / size_of)) {
+  if (0 != size_of && len > (SIZE_MAX / size_of)) {
     return NULL;
   }
   const size_t total_bytes = len * size_of;
   unsigned char *p = (unsigned char *)MALLOC(total_bytes);
-  if (p == NULL) {
+  if (NULL == p) {
     return NULL;
   }
   for (size_t i = 0; i < total_bytes; i++) {
@@ -475,9 +481,9 @@ void *CALLOC(size_t len, size_t size_of) {
 }
 
 static inline void munmap(const BlockPtr blk) {
-  int is_at_tail = (!blk->next);
-  int is_at_head = (!blk->prev);
-  size_t back = SIZE_OF_BLOCK + get_true_size(blk);
+  const int is_at_tail = (!blk->next);
+  const int is_at_head = (!blk->prev);
+  const size_t back = SIZE_OF_BLOCK + get_true_size(blk);
 
   MM_ASSERT(ma_head.total_bytes_allocated >= back);
   if (is_at_tail)
@@ -489,7 +495,7 @@ static inline void munmap(const BlockPtr blk) {
   if (blk->next)
     blk->next->prev = blk->prev;
   int result = mm_munmap((void *)blk, back);
-  if (result == -1) {
+  if (-1 == result) {
     perror("error while munmapping");
     return;
   }
@@ -498,7 +504,7 @@ static inline void munmap(const BlockPtr blk) {
 }
 
 static inline void free_or_maybe_release_sbrked(BlockPtr blk) {
-  int is_at_tail = (a_head.tail == blk);
+  int is_at_tail = is_at_main_arena_tail(blk);
   const int is_near_tail = next(blk) == CURRENT_BRK;
   const size_t true_size = get_true_size(blk);
   // If not at tail or near tail and small enough to fast bin, put it in the
@@ -513,8 +519,8 @@ static inline void free_or_maybe_release_sbrked(BlockPtr blk) {
   correct_tail_if_eaten(blk);
   const size_t back = SIZE_OF_BLOCK + true_size;
 
-  const int is_at_head = (a_head.head == blk);
-  is_at_tail = (a_head.tail == blk);
+  const int is_at_head = is_at_main_arena_head(blk);
+  is_at_tail = is_at_main_arena_tail(blk);
 
   if (!is_at_tail) {
     insert_in_unsorted_bin(blk);
@@ -556,12 +562,12 @@ static inline int is_double_free(BlockPtr blk) {
 }
 
 void FREE(void *p) {
-  if (p == NULL)
+  if (NULL == p)
     return;
   MM_MARK(FREE_CALLED);
 
   BlockPtr blk = get_block_from_arenas(p);
-  if (blk == NULL)
+  if (NULL == blk)
     return;
 
   // guard for double free
@@ -583,7 +589,7 @@ void FREE(void *p) {
 static inline void split(BlockPtr blk, const size_t aligned_size) {
   split_block(blk, aligned_size);
   BlockPtr nxt = next(blk);
-  if (a_head.tail == blk) {
+  if (is_at_main_arena_tail(blk)) {
     a_head.tail = nxt;
   }
   hot_insert_in_appropriate_bin(nxt);
@@ -591,25 +597,25 @@ static inline void split(BlockPtr blk, const size_t aligned_size) {
 
 void *MALLOC(size_t size) {
   MM_MARK(MALLOC_CALLED);
-  if (size == 0)
+  if (0 == size)
     return NULL;
 
   const size_t aligned_size = align(size);
-  enum Allocation allocation = allocation_type_for(aligned_size);
+  const enum Allocation allocation = allocation_type_for(aligned_size);
   BlockPtr blk;
 
-  if (allocation == MMAP || a_head.head == NULL) {
+  if (MMAP == allocation || NULL == a_head.head) {
     // extend_heap sets the head if it finds out that it is null
     blk = extend_heap(aligned_size, allocation);
   } else {
     blk = best_fit_find(aligned_size);
-    if ((blk == NULL) || is_at_brk(blk)) {
+    if ((NULL == blk) || is_at_brk(blk)) {
       // if failed nothing to do, if not block is not larger than size
       blk = extend_heap(aligned_size, allocation);
     }
   }
 
-  if (blk == NULL) {
+  if (NULL == blk) {
     return NULL;
   }
 
@@ -657,10 +663,10 @@ static inline void *realloc_from_mmap_to_mmap(BlockPtr blk,
   } else {
     switch_places_in_list(&mock_blk, new_blk);
     // Since this is new memory, arena's head/tail must be updated if necessary
-    if (ma_head.head == blk) {
+    if (is_at_main_arena_head(blk)) {
       ma_head.head = new_blk;
     }
-    if (ma_head.tail == blk) {
+    if (is_at_main_arena_head(blk)) {
       ma_head.tail = new_blk;
     }
     // do not have to re-set the flags since alignment protects their values
@@ -723,16 +729,16 @@ void *realloc_from_sbrk_to_sbrk(BlockPtr blk, const size_t aligned_size) {
 void *REALLOC(void *p, size_t size) {
   MM_MARK(REALLOC_CALLED);
   // If we don't have anywhere to realloc, it is effectively a malloc.
-  if (p == NULL)
+  if (NULL == p)
     return MALLOC(size);
 
   // If size is not given, it effectively is a free.
-  if (size == 0) {
+  if (0 == size) {
     FREE(p);
     return NULL;
   }
   BlockPtr blk = get_block_from_arenas(p);
-  if (blk == NULL)
+  if (NULL == blk)
     return NULL;
 
   size = align_up_fundamental(size);

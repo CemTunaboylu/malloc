@@ -37,7 +37,7 @@ BlockPtr reconstruct_valid_header(void *p) {
   } else {
     // TODO: mmapped validation
   }
-  if (p != (void *)allocated_memory(blk)) {
+  if ((void *)allocated_memory(blk) != p) {
     blk = NULL;
   }
   return blk;
@@ -45,7 +45,7 @@ BlockPtr reconstruct_valid_header(void *p) {
 
 BlockPtr get_block_from_mmapped_arena(const MMapArenaPtr ar_ptr, void *p) {
   BlockPtr b = ar_ptr->head;
-  if (b == NULL)
+  if (NULL == b)
     return NULL;
 
   int possibly_a_valid_chunk = 0;
@@ -67,7 +67,7 @@ BlockPtr get_block_from_mmapped_arena(const MMapArenaPtr ar_ptr, void *p) {
 BlockPtr get_block_from_main_arena(const ArenaPtr ar_ptr, void *p) {
   const BlockPtr head = ar_ptr->head;
   const BlockPtr tail = ar_ptr->tail;
-  if (head == NULL)
+  if (NULL == head)
     return NULL;
 
   void *the_end_of_arena_tail =
