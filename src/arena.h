@@ -71,6 +71,10 @@ extern const size_t MAX_ALIGNMENT;
 // NOTE: first element of the list (bin[0], bin[1]) are for unsorted bin
 #define BLK_PTR_IN_BIN_AT(a, i) ((BlockPtr)(&a.bins[i * 2]))
 
+#define BLK_PTR_OF_UNSORTED(a) ((BlockPtr)(&a.bins[0]))
+
+#define IS_LONE_SENTINEL(blk) (blk->next == blk && blk->prev == blk)
+
 // Bare in the sense that SLOTS_FOR_BLOCK_OFFSET_ALIGNMENT is not accounted for,
 // the index returned must be retrieved with BLK_PTR_IN_BIN_AT to
 // properly index the corresponding bin.
@@ -107,7 +111,7 @@ struct Arena {
    *    where generally SMALL_BIN_SIZE_CAP <= 512
    * large bins:
    *    bins[NUM_SMALL_BINS*2 : NUM_SLOTS_IN_BIN : LARGE_BIN_SIZE_SPACING]
-   *    sorted (asc. order).
+   *    sorted (desc. order).
    * each bin has 2 pointers fw, bk to line up a doubly linkedlist,
    * thus the multiplication.
    *

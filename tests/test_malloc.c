@@ -839,7 +839,7 @@ static void test_bare_bin_index(void) {
   }
 }
 
-static void test_first_find_fast_bin(void) {
+static void test_best_find_fast_bin(void) {
   LOG("=== %s: start ===\n", __func__);
 
   const size_t n = 5;
@@ -873,7 +873,7 @@ static void test_first_find_fast_bin(void) {
   MM_ASSERT_MARKER(RELEASED, 1);
 }
 
-static void test_first_find_bin(void) {
+static void test_best_find_bin(void) {
   LOG("=== %s: start ===\n", __func__);
 
   const size_t n = 5;
@@ -900,12 +900,12 @@ static void test_first_find_bin(void) {
   TEST_ASSERT_(READ_BINMAP(a_head, bare_idx) == 0,
                "bin map for bin[%lu] should be 0", bare_idx);
 
-  prepend(bin_sentinel, to_bin);
+  append(bin_sentinel, to_bin);
   MARK_BIN(a_head, bare_idx);
 
   void *binned = ensuring_malloc(n);
   TEST_ASSERT(binned);
-  MM_ASSERT_MARKER(BINNED, 1);
+  MM_ASSERT_MARKER(SMALL_BINNED, 1);
 
   BlockPtr from_bin = recons_blk_from_user_mem_ptr(binned);
   TEST_ASSERT(to_bin == from_bin);
@@ -917,6 +917,121 @@ static void test_first_find_bin(void) {
       bare_idx, (void *)bin_sentinel->next, (void *)bin_sentinel->prev);
 
   ensuring_free(binned);
+  MM_ASSERT_MARKER(RELEASED, 1);
+}
+
+static void test_consolidate_fastbins(void) {
+  // Put one block into each fastbin
+  void *ptrs[NUM_FAST_BINS];
+  for (size_t i = 0; i < NUM_FAST_BINS; i++) {
+    const size_t size = FAST_BIN_SIZE_START + i * FAST_BIN_STEP;
+    void *p = ensuring_malloc(size);
+    TEST_ASSERT(p);
+    MM_ASSERT_MARKER(BY_SBRKING, 1);
+    ptrs[i] = p;
+  }
+
+  for (size_t i = 0; i < NUM_FAST_BINS; i++) {
+    void *p = ptrs[i];
+    BlockPtr blk = recons_blk_from_user_mem_ptr(p);
+    mark_as_free(blk);
+    a_head.fastbins[i] = blk;
+    TEST_ASSERT(is_free(blk));
+  }
+
+  // Ensure unsorted bin is empty
+  BlockPtr unsorted_bin_sentinel = BLK_PTR_OF_UNSORTED(a_head);
+  TEST_ASSERT_(
+      (unsorted_bin_sentinel->next == unsorted_bin_sentinel->prev) &&
+          (unsorted_bin_sentinel->next == unsorted_bin_sentinel),
+      "unsorted bin sentinal should be pointing to itself got next:%p, prev:%p",
+      (void *)unsorted_bin_sentinel->next, (void *)unsorted_bin_sentinel->prev);
+
+  TEST_ASSERT_(READ_BINMAP(a_head, 0) == 0,
+               "bin map for unsorted bin should be 0");
+
+  // Since all other bins are free and contiguous to each other,
+  // the first block consolidating will fuse with others at once,
+  // and remove all other from their fastbins.
+  consolidate_fastbins();
+  MM_ASSERT_MARKER(FUSE_FWD_CALLED, NUM_FAST_BINS - 1);
+  MM_ASSERT_MARKER(CONSOLIDATED, 1);
+  MM_ASSERT_MARKER(PUT_IN_UNSORTED_BIN, 1);
+
+  for (size_t i = 0; i < NUM_FAST_BINS; i += 1) {
+    TEST_ASSERT_(a_head.fastbins[i] == NULL, "fastbin[%lu] is not empty", i);
+  }
+
+  // There will only be one block with all others merged.
+  TEST_ASSERT_((unsorted_bin_sentinel->next->next == unsorted_bin_sentinel),
+               "only single block should be prepended to the unsorted bin, the "
+               "second block :%p",
+               (void *)unsorted_bin_sentinel->next->next);
+
+  TEST_ASSERT_(READ_BINMAP(a_head, 0) == 1,
+               "bin map for unsorted bin should be 1");
+
+  BlockPtr consolidated = unsorted_bin_sentinel->next;
+  const size_t exp_consolidated_size =
+      (FAST_BIN_SIZE_START + FAST_BIN_SIZE_CAP) * (NUM_FAST_BINS) / 2 +
+      SIZE_OF_BLOCK * (NUM_FAST_BINS - 1);
+  TEST_ASSERT_(get_true_size(consolidated) == exp_consolidated_size,
+               "consolidated block must have size %lu, got %lu",
+               exp_consolidated_size, get_true_size(consolidated));
+
+  // To avoid double free
+  mark_as_used(consolidated);
+  // If it is used, it should not be in unsorted bin
+  remove_from_linkedlist(consolidated);
+  UNMARK_BIN(a_head, 0);
+
+  ensuring_free(allocated_memory(consolidated));
+  MM_ASSERT_MARKER(RELEASED, 1);
+}
+
+static void test_first_find_unsorted_bin(void) {
+  LOG("=== %s: start ===\n", __func__);
+
+  const size_t n = 5;
+  void *put_in_bin = ensuring_malloc(n);
+  TEST_ASSERT(put_in_bin);
+  MM_ASSERT_MARKER(BY_MMAPPING, 0);
+  MM_ASSERT_MARKER(BY_SBRKING, 1);
+
+  LOG("\tpost-malloc with size %lu and setting values for data ===\n", n);
+  // Artificially put it in the appropriate bin
+  BlockPtr to_bin = recons_blk_from_user_mem_ptr(put_in_bin);
+  const size_t bare_idx = GET_BARE_BIN_IDX(get_true_size(to_bin));
+  TEST_ASSERT_(bare_idx == 1, "bare_idx %lu should have been 1", bare_idx);
+
+  BlockPtr unsorted_sentinel = BLK_PTR_OF_UNSORTED(a_head);
+  remove_from_linkedlist(to_bin);
+  mark_as_free(to_bin);
+  TEST_ASSERT_(
+      (unsorted_sentinel->next == unsorted_sentinel->prev) &&
+          (unsorted_sentinel->next == unsorted_sentinel),
+      "unsorted bin sentinal should be pointing to itself got next:%p, prev:%p",
+      (void *)unsorted_sentinel->next, (void *)unsorted_sentinel->prev);
+  TEST_ASSERT_(READ_BINMAP(a_head, bare_idx) == 0,
+               "bin map for bin[%lu] should be 0", bare_idx);
+
+  append(unsorted_sentinel, to_bin);
+  MARK_BIN(a_head, 0);
+
+  void *unsorted_binned = ensuring_malloc(n);
+  TEST_ASSERT(unsorted_binned);
+  MM_ASSERT_MARKER(UNSORTED_BINNED, 1);
+
+  BlockPtr from_bin = recons_blk_from_user_mem_ptr(unsorted_binned);
+  TEST_ASSERT(to_bin == from_bin);
+  TEST_ASSERT(get_true_size(to_bin) == get_true_size(from_bin));
+  TEST_ASSERT_((unsorted_sentinel->next == unsorted_sentinel->prev) &&
+                   (unsorted_sentinel->next == unsorted_sentinel),
+               "unsorted bin sentinal should be pointing to itself got "
+               "next:%p, prev:%p",
+               (void *)unsorted_sentinel->next,
+               (void *)unsorted_sentinel->prev);
+  ensuring_free(unsorted_binned);
   MM_ASSERT_MARKER(RELEASED, 1);
 }
 
@@ -952,7 +1067,9 @@ TEST_LIST = {
     {"test_realloc_from_main_to_mmapped", test_realloc_from_main_to_mmapped},
     {"test_realloc_from_mmapped_to_main", test_realloc_from_mmapped_to_main},
     {"test_bare_bin_index", test_bare_bin_index},
-    {"test_first_find_fast_bin", test_first_find_fast_bin},
-    {"test_first_find_bin", test_first_find_bin},
+    {"test_best_find_fast_bin", test_best_find_fast_bin},
+    {"test_best_find_bin", test_best_find_bin},
+    {"test_consolidate_fastbins", test_consolidate_fastbins},
+    {"test_first_find_unsorted_bin", test_first_find_unsorted_bin},
     {NULL, NULL}};
 #endif

@@ -169,6 +169,7 @@ int fuse_next(BlockPtr b) {
     return -1;
   BlockPtr nxt = next(b);
   b->size += SIZE_OF_BLOCK + get_true_size(nxt);
+  remove_from_linkedlist(nxt);
 
   if (is_free(b)) {
     propagate_free_to_next(b);
@@ -179,35 +180,27 @@ int fuse_next(BlockPtr b) {
   return 0;
 }
 
-void fuse_fwd(BlockPtr b) {
-  while (fuse_next(b) == 0) {
-    MM_MARK(FUSE_FWD_CALLED);
-  }
-}
-
-void fuse_bwd(BlockPtr *b) {
+int fuse_prev(BlockPtr *b) {
   if (!is_free(*b)) {
-    return;
+    return -1;
   }
   if (!is_prev_free(*b)) {
-    return;
+    return -1;
   }
   BlockPtr cursor = *b;
-  do {
-    BlockPtr bk = prev(cursor);
-    bk->size += SIZE_OF_BLOCK + get_true_size(cursor);
-    cursor = bk;
-    MM_MARK(FUSE_BWD_CALLED);
-  } while (is_prev_free(cursor));
+  BlockPtr bk = prev(cursor);
+  bk->size += SIZE_OF_BLOCK + get_true_size(cursor);
+  remove_from_linkedlist(cursor);
 
   // We can assert this because realloc never tries to fuse with a previous
   // chunk, since it would have to move the user data to the previous chunk(s).
-  MM_ASSERT(is_free(cursor));
-  if (is_free(cursor))
-    propagate_free_to_next(cursor);
+  MM_ASSERT(is_free(bk));
+  if (is_free(bk))
+    propagate_free_to_next(bk);
   else
-    propagate_used_to_next(cursor);
-  *b = cursor;
+    propagate_used_to_next(bk);
+  *b = bk;
+  return 0;
 }
 
 int is_next_fusable(const BlockPtr b) {

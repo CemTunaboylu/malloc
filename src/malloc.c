@@ -85,7 +85,7 @@ static inline BlockPtr get_block_from_arenas(void *p) {
 
 static inline void correct_tail_if_eaten(const BlockPtr blk) {
   int is_tail_eaten =
-      (blk < a_head.tail) && ((void *)a_head.tail < (void *)next(blk));
+      (blk < a_head.tail) && ((void *)a_head.tail <= (void *)next(blk));
   if (is_tail_eaten)
     a_head.tail = blk;
 }
@@ -174,7 +174,7 @@ BlockPtr extend_heap(const size_t aligned_size, enum Allocation allocation) {
 #ifndef TESTING
 static inline
 #endif
-    void prepend(BlockPtr sentinel, BlockPtr new_next) {
+    void append(BlockPtr sentinel, BlockPtr new_next) {
   BlockPtr next = sentinel->next;
   sentinel->next = new_next;
   new_next->next = next;
@@ -183,9 +183,10 @@ static inline
 }
 
 static inline void insert_in_unsorted_bin(BlockPtr blk) {
-  BlockPtr unsorted_sentinel = BLK_PTR_IN_BIN_AT(a_head, 0);
-  prepend(unsorted_sentinel, blk);
-  MARK_BIN(a_head, 0);
+  BlockPtr unsorted_sentinel = BLK_PTR_OF_UNSORTED(a_head);
+  append(unsorted_sentinel, blk);
+  if (READ_BINMAP(a_head, 0) == 0)
+    MARK_BIN(a_head, 0);
   MM_MARK(PUT_IN_UNSORTED_BIN);
 }
 
@@ -201,7 +202,7 @@ static inline void insert_in_fastbin(BlockPtr blk) {
   MM_MARK(PUT_IN_FASTBIN);
 }
 
-static inline void insert_in_appropriate_bin(BlockPtr blk) {
+static inline void hot_insert_in_appropriate_bin(BlockPtr blk) {
   const size_t true_size = get_true_size(blk);
   if (CAN_BE_FAST_BINNED(true_size))
     insert_in_fastbin(blk);
@@ -225,22 +226,218 @@ static inline BlockPtr fast_find(const size_t aligned_size) {
   return head;
 }
 
-// Assuming that, we alreaedy checked for < MIN_CAP_FOR_MMAP.
-static inline BlockPtr find_in_bins(const size_t aligned_size) {
-  // check if there is an appropriate sized bin from bitmap
-  if (IS_SMALL(aligned_size)) {
-    size_t bare_idx = GET_BARE_BIN_IDX(aligned_size);
-    // the bin has an element
-    if (READ_BINMAP(a_head, bare_idx)) {
-      BlockPtr sentinel = BLK_PTR_IN_BIN_AT(a_head, bare_idx);
-      BlockPtr tail = sentinel->prev;
-      remove_from_linkedlist(tail);
-      MM_MARK(BINNED);
-      return tail;
+static inline int detaching_fuse_fwd(BlockPtr blk) {
+  BlockPtr nxt = next(blk);
+  const size_t true_size = get_true_size(nxt);
+  // If nxt is in a fast bin, we cannot guarantee that it is removed if it is a
+  // head. Thus, we need to check it explicitly, and if it is a head in a fast
+  // bin, detach it. If it is in bins, fuse_next internally removes the block
+  // from the linkedlist.
+  BlockPtr nxt_next = nxt->next;
+  const int did_fuse_next = fuse_next(blk);
+  if (did_fuse_next == -1)
+    return -1;
+  if (CAN_BE_FAST_BINNED(true_size)) {
+    const size_t n_idx = GET_FAST_BIN_IDX(true_size);
+    BlockPtr n_head = a_head.fastbins[n_idx];
+    if (n_head != NULL && n_head == nxt) {
+      a_head.fastbins[n_idx] = nxt_next;
     }
   }
-  // TODO: can check other small bins that are larger
+  return 0;
+}
+
+static inline int detaching_fuse_bwd(BlockPtr *blk) {
+  BlockPtr prv = prev(*blk);
+  const size_t true_size = get_true_size(prv);
+  // If nxt is in a fast bin, we cannot guarantee that it is removed if it is a
+  // head. Thus, we need to check it explicitly, and if it is a head in a fast
+  // bin, detach it. If it is in bins, fuse_next internally removes the block
+  // from the linkedlist.
+  BlockPtr prv_next = prv->next;
+  const int did_fuse_prev = fuse_prev(blk);
+  if (did_fuse_prev == -1)
+    return -1;
+  if (CAN_BE_FAST_BINNED(true_size)) {
+    const size_t n_idx = GET_FAST_BIN_IDX(true_size);
+    BlockPtr n_head = a_head.fastbins[n_idx];
+    if (n_head != NULL && n_head == prv) {
+      a_head.fastbins[n_idx] = prv_next;
+    }
+  }
+  return 0;
+}
+
+#ifndef TESTING
+static inline
+#endif
+    void fuse_fwd(BlockPtr b) {
+  while (detaching_fuse_fwd(b) == 0) {
+    MM_MARK(FUSE_FWD_CALLED);
+  }
+}
+
+#ifndef TESTING
+static inline
+#endif
+    void fuse_bwd(BlockPtr *b) {
+  while (detaching_fuse_bwd(b) == 0) {
+    MM_MARK(FUSE_BWD_CALLED);
+  }
+}
+
+// Remove each block from each fast bin, fuse them as you go, put them into
+// unsorted bin.
+#ifndef TESTING
+static inline
+#endif
+    void consolidate_fastbins(void) {
+  // Move blocks from fast bins while fusing along the way to unsorted bin.
+  for (size_t f_idx = 0; f_idx < NUM_FAST_BINS; f_idx++) {
+    BlockPtr head = a_head.fastbins[f_idx];
+    if (head == NULL)
+      continue;
+    MM_MARK(CONSOLIDATED);
+    MM_ASSERT(head->next != head);
+    BlockPtr heads_next;
+    while (head != NULL) {
+      MM_ASSERT(head->next != head);
+      MM_ASSERT(is_free(head));
+      fuse_fwd(head);
+      fuse_bwd(&head);
+      MM_ASSERT(is_free(head));
+
+      correct_tail_if_eaten(head);
+      heads_next = head->next;
+      insert_in_unsorted_bin(head);
+      head = heads_next;
+    }
+    a_head.fastbins[f_idx] = NULL;
+  }
+}
+
+static inline BlockPtr
+find_smallest_fitting_large_bin_block(BlockPtr sentinel,
+                                      const size_t true_size) {
+  // We are in the large bin that the block should be put.
+  BlockPtr large = sentinel->next;
+  while (large->next != sentinel && get_true_size(large->next) > true_size) {
+    large = large->next;
+  }
+  return large;
+}
+
+#ifndef TESTING
+static inline
+#endif
+    // Searches for a best fit, while consolidating failed attempts i.e. if size
+    // is not enough, fuse and check again, if not put in the appropriate bin
+    // (small or large).
+    // NOTE: To keep things simple, we pay the price of sorted insertion to
+    // large bins.
+    BlockPtr search_in_unsorted_consolidating(const size_t aligned_size) {
+  BlockPtr sentinel = BLK_PTR_OF_UNSORTED(a_head);
+  if (IS_LONE_SENTINEL(sentinel))
+    return NULL;
+  BlockPtr blk = sentinel->next;
+  BlockPtr nxt = NULL;
+  while (nxt != sentinel) {
+    nxt = next(blk);
+    MM_ASSERT(is_free(blk));
+    remove_from_linkedlist(blk);
+    if (get_true_size(blk) >= aligned_size) {
+      remove_from_linkedlist(blk);
+      MM_MARK(UNSORTED_BINNED);
+      return blk;
+    }
+    fuse_fwd(blk);
+    fuse_bwd(&blk);
+    correct_tail_if_eaten(blk);
+    if (get_true_size(blk) >= aligned_size) {
+      remove_from_linkedlist(blk);
+      MM_MARK(UNSORTED_BINNED);
+      return blk;
+    }
+    const size_t true_size = get_true_size(blk);
+    const size_t bin_idx = GET_BARE_BIN_IDX(true_size);
+    BlockPtr bin_sentinel = BLK_PTR_IN_BIN_AT(a_head, bin_idx);
+    if (IS_SMALL(true_size)) {
+      append(bin_sentinel, blk);
+    } else {
+      // We are in the large bin that the block should be put.
+      BlockPtr append_after =
+          find_smallest_fitting_large_bin_block(bin_sentinel, true_size);
+      // get_true_size(append_after->next) <= true_size, thus we should append
+      // blk here.
+      append(append_after, blk);
+    }
+    blk = nxt;
+  }
   return NULL;
+}
+
+static inline BlockPtr get_from_small_bin(const size_t aligned_size) {
+  size_t bare_idx = GET_BARE_BIN_IDX(aligned_size);
+  // The bin has an element
+  if (READ_BINMAP(a_head, bare_idx) == 0)
+    return NULL;
+
+  BlockPtr sentinel = BLK_PTR_IN_BIN_AT(a_head, bare_idx);
+  BlockPtr tail = sentinel->prev;
+  remove_from_linkedlist(tail);
+  MM_MARK(SMALL_BINNED);
+  return tail;
+}
+
+static inline BlockPtr get_from_large_bin(const size_t aligned_size) {
+  size_t bare_idx = GET_BARE_BIN_IDX(aligned_size);
+  // The bin has an element
+  if (READ_BINMAP(a_head, bare_idx) == 0)
+    return NULL;
+
+  BlockPtr sentinel = BLK_PTR_IN_BIN_AT(a_head, bare_idx);
+  // TODO:It must be size ordered, consolidation to large bins, should put them
+  // ordered
+  BlockPtr larger =
+      find_smallest_fitting_large_bin_block(sentinel, aligned_size);
+  BlockPtr larger_next = larger->next;
+  if (larger_next && larger_next != sentinel &&
+      get_true_size(larger_next) == aligned_size)
+    larger = larger_next;
+  remove_from_linkedlist(larger);
+  MM_MARK(LARGE_BINNED);
+  return larger;
+}
+
+// Assuming that, we alreaedy checked for < MIN_CAP_FOR_MMAP.
+static inline BlockPtr find_in_bins(const size_t aligned_size) {
+  // Check if there is an appropriate sized bin from bitmap
+  if (IS_SMALL(aligned_size)) {
+    BlockPtr small = get_from_small_bin(aligned_size);
+    if (small)
+      return small;
+
+    BlockPtr from_unsorted = search_in_unsorted_consolidating(aligned_size);
+    if (from_unsorted)
+      return from_unsorted;
+    // If we cannot fast bin this (larger than bigger fast bin), but small
+    // enough to small bin, try consolidating fast bins and check again in
+    // unsorted bin.
+    consolidate_fastbins();
+    // Try unsorted bins again.
+    from_unsorted = search_in_unsorted_consolidating(aligned_size);
+    if (from_unsorted)
+      return from_unsorted;
+    return NULL;
+  }
+  // At this point, we know that aligned_size must be large i.e. cannot be fast
+  // or small binned. We consolidate fast bins with the hope of finding one.
+  consolidate_fastbins();
+  BlockPtr blk = search_in_unsorted_consolidating(aligned_size);
+  if (blk)
+    return blk;
+
+  return get_from_large_bin(aligned_size);
 }
 
 // We don't search on mmapped arenas, cannot find a free block in it's list
@@ -389,7 +586,7 @@ static inline void split(BlockPtr blk, const size_t aligned_size) {
   if (a_head.tail == blk) {
     a_head.tail = nxt;
   }
-  insert_in_appropriate_bin(nxt);
+  hot_insert_in_appropriate_bin(nxt);
 }
 
 void *MALLOC(size_t size) {
@@ -498,7 +695,7 @@ static inline void *realloc_from_mmap_to_sbrk(BlockPtr blk,
 
 void *realloc_from_sbrk_to_sbrk(BlockPtr blk, const size_t aligned_size) {
   // Try to grow in-place (if needed), note that we only try to grow forward.
-  while (get_true_size(blk) < aligned_size && fuse_next(blk) != -1) {
+  while (get_true_size(blk) < aligned_size && detaching_fuse_fwd(blk) != -1) {
   }
   correct_tail_if_eaten(blk);
 

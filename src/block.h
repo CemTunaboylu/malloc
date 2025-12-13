@@ -38,6 +38,7 @@ struct SBlock {
 BlockPtr prev(const BlockPtr);
 BlockPtr reconstruct_from_user_memory(const void *);
 int fuse_next(BlockPtr);
+int fuse_prev(BlockPtr *);
 int is_at_brk(const BlockPtr);
 int is_free(const BlockPtr);
 int is_mmapped(const BlockPtr);
@@ -50,8 +51,6 @@ size_t prev_size(const BlockPtr);
 void *allocated_memory(const BlockPtr);
 void *next(const BlockPtr);
 void deep_copy_user_memory(const BlockPtr src, BlockPtr to);
-void fuse_bwd(BlockPtr *);
-void fuse_fwd(BlockPtr);
 void mark_as_free(BlockPtr);
 void mark_as_mmapped(BlockPtr);
 void mark_as_used(BlockPtr);

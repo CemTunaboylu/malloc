@@ -30,7 +30,10 @@ extern void _mm_tear_down_allocator(void);
 extern struct Arena a_head;
 extern struct MMapArena ma_head;
 
-void prepend(BlockPtr sentinel, BlockPtr new_next);
+void append(BlockPtr sentinel, BlockPtr new_next);
+void consolidate_fastbins(void);
+void fuse_fwd(BlockPtr);
+void fuse_bwd(BlockPtr *);
 #endif
 
 #define CURRENT_BRK mm_sbrk(0)

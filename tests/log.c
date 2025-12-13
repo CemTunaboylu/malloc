@@ -69,7 +69,7 @@ void print_list_into_fd(const int fd) {
   BlockPtr b = next(head);
   for (; !is_at_brk(b); b = next(b)) {
     print_arrow(fd);
-    print_blk(fd, head);
+    print_blk(fd, b);
   }
 }
 
