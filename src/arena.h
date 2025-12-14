@@ -99,7 +99,7 @@ extern const size_t MAX_ALIGNMENT;
     a.fastbins[idx] = a.fastbins[idx]->next;                                   \
   }
 
-// Note: thread-safety is not a concern at the moment,
+// NOTE: thread-safety is not a concern at the moment,
 // thus we only have 2 arenas: sbrk arena and mmap arena.
 struct Arena {
   BlockPtr head;
@@ -133,8 +133,6 @@ struct Arena {
 };
 
 struct MMapArena {
-  BlockPtr head;
-  BlockPtr tail;
   size_t total_bytes_allocated;
   size_t num_mmapped_regions;
 };

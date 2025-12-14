@@ -30,12 +30,12 @@ static int sbrked_header_validation(const BlockPtr cand) {
 
 BlockPtr reconstruct_valid_header(void *p) {
   BlockPtr blk = reconstruct_from_user_memory(p);
-  // TODO: add hardening here
   if (!is_mmapped(blk)) {
     if (!sbrked_header_validation(blk))
       return NULL;
   } else {
-    // TODO: mmapped validation
+    if (get_true_size(blk) < MIN_CAP_FOR_MMAP)
+      return NULL;
   }
   if ((void *)allocated_memory(blk) != p) {
     blk = NULL;
@@ -44,24 +44,16 @@ BlockPtr reconstruct_valid_header(void *p) {
 }
 
 BlockPtr get_block_from_mmapped_arena(const MMapArenaPtr ar_ptr, void *p) {
-  BlockPtr b = ar_ptr->head;
-  if (NULL == b)
+  const size_t total_bytes = ar_ptr->total_bytes_allocated;
+  if (0 == ar_ptr->num_mmapped_regions && 0 == total_bytes)
     return NULL;
 
-  int possibly_a_valid_chunk = 0;
-  do {
-    if (((void *)b < p) || ((void *)(b)) > p) {
-      possibly_a_valid_chunk = 1;
-      break;
-    }
-    b = b->next;
-  } while (b->next);
-
-  if (!possibly_a_valid_chunk) {
+  BlockPtr blk = reconstruct_valid_header(p);
+  if (get_true_size(blk) > total_bytes)
     return NULL;
-  }
-
-  return reconstruct_valid_header(p);
+  if (!is_mmapped(blk))
+    return NULL;
+  return blk;
 }
 
 BlockPtr get_block_from_main_arena(const ArenaPtr ar_ptr, void *p) {

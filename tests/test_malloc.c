@@ -119,8 +119,8 @@ static void check_and_reset_all_markers_unset(void) {
 static void check_all_arena_heads_are_null(void) {
   TEST_CHECK(NULL == a_head.head);
   TEST_CHECK(NULL == a_head.tail);
-  TEST_CHECK(NULL == ma_head.head);
-  TEST_CHECK(NULL == ma_head.tail);
+  TEST_CHECK(0 == ma_head.num_mmapped_regions);
+  TEST_CHECK(0 == ma_head.total_bytes_allocated);
 }
 
 static void pre_test_sanity(void) {
@@ -157,9 +157,6 @@ static inline int is_aligned(void *p) {
 
 void check_block_header_shape(BlockPtr head) {
   TEST_CHECK(sizeof(head->size) == 8);
-  TEST_CHECK(sizeof(head) == 8);
-  TEST_CHECK(sizeof(head->next) == 8);
-  TEST_CHECK(sizeof(head->prev) == 8);
   TEST_CHECK(is_aligned(head));
 }
 

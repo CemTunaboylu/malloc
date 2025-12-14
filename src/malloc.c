@@ -60,9 +60,7 @@ static
 #ifndef TESTING
 static
 #endif
-    struct MMapArena ma_head = {.head = NULL,
-                                .tail = NULL,
-                                .total_bytes_allocated = 0,
+    struct MMapArena ma_head = {.total_bytes_allocated = 0,
                                 .num_mmapped_regions = 0};
 
 __attribute__((constructor)) void init_main_arena_bins(void) {
@@ -103,10 +101,6 @@ insert_into_belonging_arena(BlockPtr b, const size_t total_bytes_to_allocated,
   size_t *allocated_bytes_ptr;
   BlockPtr *tail;
   if (MMAP == allocation) {
-    if (!ma_head.head) {
-      ma_head.head = b;
-    }
-    tail = &(ma_head.tail);
     allocated_bytes_ptr = &(ma_head.total_bytes_allocated);
     ma_head.num_mmapped_regions += 1;
   } else {
@@ -115,17 +109,17 @@ insert_into_belonging_arena(BlockPtr b, const size_t total_bytes_to_allocated,
     }
     tail = &(a_head.tail);
     allocated_bytes_ptr = &(a_head.total_bytes_allocated);
+    // if there is a last, append this block there
+    if (*tail && is_free(*tail)) {
+      propagate_free_to_next(*tail);
+      if (is_mmapped(b)) {
+        b->prev = *tail;
+        (*tail)->next = b;
+      }
+    }
+    *tail = b;
   }
 
-  // if there is a last, append this block there
-  if (*tail && is_free(*tail)) {
-    propagate_free_to_next(*tail);
-    if (is_mmapped(b)) {
-      b->prev = *tail;
-      (*tail)->next = b;
-    }
-  }
-  *tail = b;
   allocated_bytes_update(allocated_bytes_ptr, total_bytes_to_allocated);
 }
 
@@ -481,19 +475,9 @@ void *CALLOC(size_t len, size_t size_of) {
 }
 
 static inline void munmap(const BlockPtr blk) {
-  const int is_at_tail = (!blk->next);
-  const int is_at_head = (!blk->prev);
   const size_t back = SIZE_OF_BLOCK + get_true_size(blk);
 
   MM_ASSERT(ma_head.total_bytes_allocated >= back);
-  if (is_at_tail)
-    ma_head.tail = blk->prev;
-  if (is_at_head)
-    ma_head.head = blk->next;
-  if (blk->prev)
-    blk->prev->next = blk->next;
-  if (blk->next)
-    blk->next->prev = blk->prev;
   int result = mm_munmap((void *)blk, back);
   if (-1 == result) {
     perror("error while munmapping");
@@ -637,11 +621,6 @@ static inline void *realloc_from_mmap_to_mmap(BlockPtr blk,
   const size_t full_aligned_size = SIZE_OF_BLOCK + aligned_size;
   const size_t full_old_size = SIZE_OF_BLOCK + true_size;
 
-  struct SBlock mock_blk = {
-      .next = blk->next,
-      .prev = blk->prev,
-  };
-
   void *new = mm_mremap((void *)blk, full_old_size, full_aligned_size);
   if (IS_FAILED_BY_PTR(new)) {
     perror("mremap failed");
@@ -657,20 +636,10 @@ static inline void *realloc_from_mmap_to_mmap(BlockPtr blk,
   allocated_bytes_update(&ma_head.total_bytes_allocated, size_update);
 
   BlockPtr new_blk = (BlockPtr)new;
+  // do not have to re-set the flags since alignment protects their values
   if (new_blk == blk) {
-    // do not have to re-set the flags since alignment protects their values
     new_blk->size += size_update;
-    // update the user memory pointer
   } else {
-    switch_places_in_list(&mock_blk, new_blk);
-    // Since this is new memory, arena's head/tail must be updated if necessary
-    if (is_at_main_arena_head(blk)) {
-      ma_head.head = new_blk;
-    }
-    if (is_at_main_arena_head(blk)) {
-      ma_head.tail = new_blk;
-    }
-    // do not have to re-set the flags since alignment protects their values
     new_blk->size = flagged_size + size_update;
   }
   return allocated_memory(new_blk);
