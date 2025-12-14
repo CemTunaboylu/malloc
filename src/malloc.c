@@ -55,8 +55,7 @@ static
                            .bins = {NULL},
                            .binmap = {0},
                            .fastbins = {NULL},
-                           .total_bytes_allocated = 0,
-                           .total_free_bytes = 0};
+                           .total_bytes_allocated = 0};
 
 #ifndef TESTING
 static
@@ -109,6 +108,7 @@ insert_into_belonging_arena(BlockPtr b, const size_t total_bytes_to_allocated,
     }
     tail = &(ma_head.tail);
     allocated_bytes_ptr = &(ma_head.total_bytes_allocated);
+    ma_head.num_mmapped_regions += 1;
   } else {
     if (!a_head.head) {
       a_head.head = b;
@@ -500,6 +500,7 @@ static inline void munmap(const BlockPtr blk) {
     return;
   }
   MM_MARK(MUNMAPPED);
+  ma_head.num_mmapped_regions -= 1;
   allocated_bytes_update(&(ma_head.total_bytes_allocated), -back);
 }
 

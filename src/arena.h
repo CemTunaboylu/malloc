@@ -130,7 +130,6 @@ struct Arena {
   // no 2 contiguous chunks are fusied.
   BlockPtr fastbins[NUM_FAST_BINS];
   size_t total_bytes_allocated;
-  size_t total_free_bytes;
 };
 
 struct MMapArena {

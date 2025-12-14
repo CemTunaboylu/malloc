@@ -625,6 +625,7 @@ static void test_mmap(void) {
   TEST_ASSERT(p);
 
   MM_ASSERT_MARKER(BY_MMAPPING, 1);
+  TEST_ASSERT(1 == ma_head.num_mmapped_regions);
   MM_ASSERT_MARKER(BY_SBRKING, 0);
 
   ensuring_free(p);
@@ -687,6 +688,7 @@ static void test_mremap(void) {
   const size_t n = MMAP_SIZE(1);
   char *p = (char *)ensuring_malloc(n);
   TEST_ASSERT(p);
+  TEST_ASSERT(1 == ma_head.num_mmapped_regions);
 
   SET_BYTES_INCREMENTALLY(p, n);
 
@@ -698,6 +700,7 @@ static void test_mremap(void) {
   const size_t re_grow_n = MMAP_SIZE(100);
   char *q = (char *)ensuring_realloc(p, re_grow_n);
   TEST_ASSERT_(p != q, "returned mremapped pointer must be different");
+  TEST_ASSERT(1 == ma_head.num_mmapped_regions);
 
   MM_ASSERT_MARKER(MMAPPED_BIGGER, 1);
   MM_ASSERT_MARKER(MALLOC_CALLED, 0);
@@ -711,6 +714,7 @@ static void test_mremap(void) {
 
   const size_t re_shrink_n = MMAP_SIZE(5);
   char *r = (char *)ensuring_realloc(q, re_shrink_n);
+  TEST_ASSERT(1 == ma_head.num_mmapped_regions);
   MM_ASSERT_MARKER(MUNMAPPED_EXCESS, 1);
   MM_ASSERT_MARKER(MALLOC_CALLED, 0);
   MM_ASSERT_MARKER(FREE_CALLED, 0);
@@ -721,6 +725,7 @@ static void test_mremap(void) {
   LOG("\tafter shrinking mremap with %lu ===\n", re_shrink_n);
   ensuring_free(r);
   MM_ASSERT_MARKER(MUNMAPPED, 1);
+  TEST_ASSERT(0 == ma_head.num_mmapped_regions);
 }
 
 static void test_realloc_from_main_to_mmapped(void) {
