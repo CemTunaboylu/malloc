@@ -112,10 +112,6 @@ insert_into_belonging_arena(BlockPtr b, const size_t total_bytes_to_allocated,
     // if there is a last, append this block there
     if (*tail && is_free(*tail)) {
       propagate_free_to_next(*tail);
-      if (is_mmapped(b)) {
-        b->prev = *tail;
-        (*tail)->next = b;
-      }
     }
     *tail = b;
   }
@@ -151,15 +147,6 @@ BlockPtr extend_heap(const size_t aligned_size, enum Allocation allocation) {
   b->next = b->prev = NULL;
   insert_into_belonging_arena(b, total_bytes_to_allocate, allocation);
 
-  if (SBRK == allocation && !is_at_main_arena_head(b)) {
-    if (is_free(a_head.tail)) {
-      BlockPtr bk = prev(b);
-      MM_ASSERT(is_at_main_arena_tail(bk));
-      if (is_free(bk))
-        propagate_free_to_next(bk);
-    }
-  }
-
   return b;
 }
 
@@ -186,8 +173,7 @@ static inline
 static inline void insert_in_unsorted_bin(BlockPtr blk) {
   BlockPtr unsorted_sentinel = BLK_PTR_OF_UNSORTED(a_head);
   append(unsorted_sentinel, blk);
-  if (READ_BINMAP(a_head, 0) == 0)
-    MARK_BIN(a_head, 0);
+  // We don't normally check on unsorted bin's bitmap, thus we don't housekeep.
   MM_MARK(PUT_IN_UNSORTED_BIN);
 }
 
@@ -229,7 +215,7 @@ static inline BlockPtr fast_find(const size_t aligned_size) {
 
 static inline int detaching_fuse_fwd(BlockPtr blk) {
   BlockPtr nxt = next(blk);
-  const size_t true_size = get_true_size(nxt);
+  const size_t nxt_true_size = get_true_size(nxt);
   // If nxt is in a fast bin, we cannot guarantee that it is removed if it is a
   // head. Thus, we need to check it explicitly, and if it is a head in a fast
   // bin, detach it. If it is in bins, fuse_next internally removes the block
@@ -238,19 +224,23 @@ static inline int detaching_fuse_fwd(BlockPtr blk) {
   const int did_fuse_next = fuse_next(blk);
   if (-1 == did_fuse_next)
     return -1;
-  if (CAN_BE_FAST_BINNED(true_size)) {
-    const size_t n_idx = GET_FAST_BIN_IDX(true_size);
+  if (CAN_BE_FAST_BINNED(nxt_true_size)) {
+    const size_t n_idx = GET_FAST_BIN_IDX(nxt_true_size);
     BlockPtr n_head = a_head.fastbins[n_idx];
     if (NULL != n_head && nxt == n_head) {
       a_head.fastbins[n_idx] = nxt_next;
     }
   }
+  // fuse_next removes the chunk from the list but does not check if it gets
+  // emptied. We intentionally are lazy as glibc to not fix the bitmap
+  // immediately.
+  // See the binmap notes on arena.h.
   return 0;
 }
 
 static inline int detaching_fuse_bwd(BlockPtr *blk) {
   BlockPtr prv = prev(*blk);
-  const size_t true_size = get_true_size(prv);
+  const size_t prv_true_size = get_true_size(prv);
   // If nxt is in a fast bin, we cannot guarantee that it is removed if it is a
   // head. Thus, we need to check it explicitly, and if it is a head in a fast
   // bin, detach it. If it is in bins, fuse_next internally removes the block
@@ -259,12 +249,17 @@ static inline int detaching_fuse_bwd(BlockPtr *blk) {
   const int did_fuse_prev = fuse_prev(blk);
   if (-1 == did_fuse_prev)
     return -1;
-  if (CAN_BE_FAST_BINNED(true_size)) {
-    const size_t n_idx = GET_FAST_BIN_IDX(true_size);
+  if (CAN_BE_FAST_BINNED(prv_true_size)) {
+    const size_t n_idx = GET_FAST_BIN_IDX(prv_true_size);
     BlockPtr n_head = a_head.fastbins[n_idx];
     if (NULL != n_head && prv == n_head) {
       a_head.fastbins[n_idx] = prv_next;
     }
+  } else {
+    // fuse_prev removes the chunk from the list but does not check if it gets
+    // emptied. We intentionally are lazy as glibc to not fix the bitmap
+    // immediately.
+    // See the binmap notes on arena.h.
   }
   return 0;
 }
@@ -351,7 +346,7 @@ static inline
     if (IS_BLOCKS_SIZE_ENOUGH(blk, aligned_size)) {
       remove_from_linkedlist(blk);
       MM_MARK(UNSORTED_BINNED);
-      return blk;
+      break;
     }
     fuse_fwd(blk);
     fuse_bwd(&blk);
@@ -359,7 +354,7 @@ static inline
     if (IS_BLOCKS_SIZE_ENOUGH(blk, aligned_size)) {
       remove_from_linkedlist(blk);
       MM_MARK(UNSORTED_BINNED);
-      return blk;
+      break;
     }
     const size_t true_size = get_true_size(blk);
     const size_t bin_idx = GET_BARE_BIN_IDX(true_size);
@@ -374,9 +369,16 @@ static inline
       // blk here.
       append(append_after, blk);
     }
+    if (0 == READ_BINMAP(a_head, bin_idx))
+      MARK_BIN(a_head, bin_idx);
     blk = nxt;
   }
-  return NULL;
+  // We don't normally check on unsorted bin's bitmap, thus we don't housekeep.
+
+  if (IS_LONE_SENTINEL(blk))
+    blk = NULL;
+
+  return blk;
 }
 
 static inline BlockPtr get_from_small_bin(const size_t aligned_size) {
@@ -386,6 +388,11 @@ static inline BlockPtr get_from_small_bin(const size_t aligned_size) {
     return NULL;
 
   BlockPtr sentinel = BLK_PTR_IN_BIN_AT(a_head, bare_idx);
+  if (IS_LONE_SENTINEL(sentinel)) {
+    // We housekeep so that next calls don't have to.
+    UNMARK_BIN(a_head, bare_idx);
+    return NULL;
+  }
   BlockPtr tail = sentinel->prev;
   remove_from_linkedlist(tail);
   MM_MARK(SMALL_BINNED);
@@ -399,6 +406,11 @@ static inline BlockPtr get_from_large_bin(const size_t aligned_size) {
     return NULL;
 
   const BlockPtr sentinel = BLK_PTR_IN_BIN_AT(a_head, bare_idx);
+  if (IS_LONE_SENTINEL(sentinel)) {
+    // We housekeep so that next calls don't have to.
+    UNMARK_BIN(a_head, bare_idx);
+    return NULL;
+  }
   BlockPtr larger =
       find_smallest_fitting_large_bin_block(sentinel, aligned_size);
   BlockPtr larger_next = larger->next;
@@ -552,8 +564,12 @@ void FREE(void *p) {
   MM_MARK(FREE_CALLED);
 
   BlockPtr blk = get_block_from_arenas(p);
-  if (NULL == blk)
+  if (NULL == blk) {
+#ifdef TESTING
+    MM_MARK(FREE_ON_BAD_PTR);
+#endif
     return;
+  }
 
   // guard for double free
   if (is_double_free(blk))

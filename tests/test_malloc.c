@@ -963,9 +963,6 @@ static void test_consolidate_fastbins(void) {
                "second block :%p",
                (void *)unsorted_bin_sentinel->next->next);
 
-  TEST_ASSERT_(READ_BINMAP(a_head, 0) == 1,
-               "bin map for unsorted bin should be 1");
-
   BlockPtr consolidated = unsorted_bin_sentinel->next;
   const size_t exp_consolidated_size =
       (FAST_BIN_SIZE_START + FAST_BIN_SIZE_CAP) * (NUM_FAST_BINS) / 2 +
@@ -978,7 +975,6 @@ static void test_consolidate_fastbins(void) {
   mark_as_used(consolidated);
   // If it is used, it should not be in unsorted bin
   remove_from_linkedlist(consolidated);
-  UNMARK_BIN(a_head, 0);
 
   ensuring_free(allocated_memory(consolidated));
   MM_ASSERT_MARKER(RELEASED, 1);

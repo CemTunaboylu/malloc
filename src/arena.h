@@ -125,6 +125,10 @@ struct Arena {
   // set to 0. Since we have NUM_CHUNK_SIZES bins and not all architectures have
   // a type that can  support it we "dynamically" arrange an array if we need
   // more than one.
+  // NOTE: We are lazy when it comes to keeping the binmaps perfectly
+  // up-to-date. Housekeeping in that sense is expensive, so a 0 on a bitmap
+  // read means a definite empty, 1 on the other hand does not guarantee a
+  // populated bin.
   MAP_ELMNT_TYPE binmap[NUM_ELMNTS_NECESSARY_TO_MAP];
   // range of [FAST_BIN_SIZE_START : FAST_BIN_SIZE_CAP : ALIGNMENT] bytes,
   // no 2 contiguous chunks are fusied.
