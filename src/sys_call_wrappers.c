@@ -104,10 +104,6 @@ void *mm_mremap(void *old_p, size_t old_size, size_t new_size) {
   // to handle overlapping memory regions
   memmove(new_base, old_base, old_size);
 
-  for (size_t i = 0; i < old_size; ++i) {
-    new_base[i] = old_base[i];
-  }
-
   // We could call mm_munmap(old_p, old_size) or just "leak" it.
   // For tests, leaking is usually fine; or:
   // (void)mm_munmap(old_p, old_size);
