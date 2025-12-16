@@ -548,7 +548,7 @@ static inline int is_double_free(BlockPtr blk) {
   MM_MARK(DOUBLE_FREE);
 #else
   debug_write_str("double free: ");
-  debug_write_ptr(p);
+  debug_write_ptr(allocated_memory(blk));
   debug_write_str("\n");
 #endif
   return 1;

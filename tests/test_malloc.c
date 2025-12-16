@@ -988,7 +988,7 @@ static void test_best_find_bin(void) {
   BlockPtr bin_sentinel = BLK_PTR_IN_BIN_AT(a_head, bare_idx);
   mark_as_free(to_bin);
   TEST_ASSERT_(IS_LONE_SENTINEL(bin_sentinel),
-               "sentinal for bin[%lu] should be pointing to itself got "
+               "sentinel for bin[%lu] should be pointing to itself got "
                "next:%p, prev:%p",
                bare_idx, (void *)bin_sentinel->next,
                (void *)bin_sentinel->prev);
@@ -1008,7 +1008,7 @@ static void test_best_find_bin(void) {
   TEST_ASSERT(get_true_size(to_bin) == get_true_size(from_bin));
   TEST_ASSERT_(
       IS_LONE_SENTINEL(bin_sentinel),
-      "sentinal for bin[%lu] should be pointing to itself got next:%p, prev:%p",
+      "sentinel for bin[%lu] should be pointing to itself got next:%p, prev:%p",
       bare_idx, (void *)bin_sentinel->next, (void *)bin_sentinel->prev);
 
   ensuring_free(binned);
@@ -1041,7 +1041,7 @@ static void test_consolidate_fastbins(void) {
   BlockPtr unsorted_bin_sentinel = BLK_PTR_OF_UNSORTED(a_head);
   TEST_ASSERT_(
       IS_LONE_SENTINEL(unsorted_bin_sentinel),
-      "unsorted bin sentinal should be pointing to itself got next:%p, prev:%p",
+      "unsorted bin sentinel should be pointing to itself got next:%p, prev:%p",
       (void *)unsorted_bin_sentinel->next, (void *)unsorted_bin_sentinel->prev);
 
   TEST_ASSERT_(0 == READ_BINMAP(a_head, 0),
@@ -1103,7 +1103,7 @@ static void test_search_in_unsorted_consolidating(void) {
   BlockPtr unsorted_bin_sentinel = BLK_PTR_OF_UNSORTED(a_head);
   TEST_ASSERT_(
       IS_LONE_SENTINEL(unsorted_bin_sentinel),
-      "unsorted bin sentinal should be pointing to itself got next:%p, prev:%p",
+      "unsorted bin sentinel should be pointing to itself got next:%p, prev:%p",
       (void *)unsorted_bin_sentinel->next, (void *)unsorted_bin_sentinel->prev);
 
   TEST_ASSERT_(0 == READ_BINMAP(a_head, 0),
@@ -1148,7 +1148,7 @@ static void test_first_find_unsorted_bin(void) {
   mark_as_free(to_bin);
   TEST_ASSERT_(
       IS_LONE_SENTINEL(unsorted_sentinel),
-      "unsorted bin sentinal should be pointing to itself got next:%p, prev:%p",
+      "unsorted bin sentinel should be pointing to itself got next:%p, prev:%p",
       (void *)unsorted_sentinel->next, (void *)unsorted_sentinel->prev);
   TEST_ASSERT_(0 == READ_BINMAP(a_head, bare_idx),
                "bin map for bin[%lu] should be 0", bare_idx);
@@ -1164,7 +1164,7 @@ static void test_first_find_unsorted_bin(void) {
   TEST_ASSERT(from_bin == to_bin);
   TEST_ASSERT(get_true_size(to_bin) == get_true_size(from_bin));
   TEST_ASSERT_(IS_LONE_SENTINEL(unsorted_sentinel),
-               "unsorted bin sentinal should be pointing to itself got "
+               "unsorted bin sentinel should be pointing to itself got "
                "next:%p, prev:%p",
                (void *)unsorted_sentinel->next,
                (void *)unsorted_sentinel->prev);
