@@ -49,8 +49,7 @@ endif
 CFLAGS   := $(CSTD) $(WARN) $(DBG) $(SAN) -fno-builtin $(TEST_DEFS) $(INCLUDE_PUBLIC) $(INCLUDE_INTERNAL)
 
 # --- sources ---
-# filter-out interpose.c, it will only be compiled and linked in Darwin
-SRCS     := $(filter-out $(SRC_DIR)/interpose.c,$(wildcard $(SRC_DIR)/*.c))
+SRCS     := $(wildcard $(SRC_DIR)/*.c)
 OBJS     := $(patsubst $(SRC_DIR)/%.c,$(OBJ_DIR)/%.o,$(SRCS))
 LIB      := $(BLD_DIR)/lib$(strip $(PROJECT)).a
 

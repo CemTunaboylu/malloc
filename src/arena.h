@@ -1,0 +1,155 @@
+#pragma once
+
+#include <block.h>
+#include <stddef.h>
+#include <stdint.h>
+#include <sys/types.h>
+
+typedef struct Arena *ArenaPtr;
+typedef struct MMapArena *MMapArenaPtr;
+
+extern const size_t MAX_ALIGNMENT;
+#define ALIGNMENT MAX_ALIGNMENT
+
+#define MAP_ELMNT_TYPE uint32_t
+#define MIN_CAP_FOR_MMAP (131072) // 128 KiB
+#define NUM_BINS (1 + NUM_SMALL_BINS + NUM_LARGE_BINS)
+// To be able to pull the repositioning trick to first element,
+// we need a buffer with the size of the rest of the block.
+#define OFFSET_OF_NEXT offsetof(struct SBlock, next)
+// How many size_t slots we need for storing/mimicking the rest of the block
+// (above the next).
+#define SLOTS_FOR_BLOCK_OFFSET_ALIGNMENT (OFFSET_OF_NEXT / sizeof(size_t))
+#define BLOCK_OFFSET_ALIGNED_IX(ix) (ix + SLOTS_FOR_BLOCK_OFFSET_ALIGNMENT)
+
+#define NUM_SLOTS_IN_BIN (SLOTS_FOR_BLOCK_OFFSET_ALIGNMENT + NUM_BINS * 2)
+#define CAP_CALC(start, num, step_size) (start + (num - 1) * step_size)
+
+#define NUM_SMALL_BINS (64)
+#define SMALL_BIN_SIZE_START (ALIGNMENT)
+#define SMALL_BIN_STEP (ALIGNMENT)
+#define SMALL_BIN_SIZE_CAP                                                     \
+  CAP_CALC(SMALL_BIN_SIZE_START, NUM_SMALL_BINS, SMALL_BIN_STEP)
+
+#define IS_SMALL(req_aligned_size) (req_aligned_size < SMALL_BIN_SIZE_CAP)
+
+#define NUM_LARGE_BINS (63)
+#define LARGE_BIN_SIZE_START (SMALL_BIN_SIZE_CAP + ALIGNMENT)
+// In glibc malloc, spacing seems to vary, 64, 512, 4096 etc. but for simplicity
+// ours is constant, [512+step:131_072-step:step] where we choose the step as
+// 2048. The largest memory size we will have is 129_536. The largest bin,
+// will have the sizes btw. 129_536 to 131_072 (128KiB). Above that is mmaps
+// territory.
+#define LARGE_BIN_STEP (2048)
+#define LARGE_BIN_SIZE_CAP                                                     \
+  CAP_CALC(LARGE_BIN_SIZE_START, LARGE_BIN_STEP, NUM_LARGE_BINS)
+#define LARGE_BIN_IDX_SHIFT(idx) (size_t)(1 + NUM_SMALL_BINS + idx)
+
+#define NUM_FAST_BINS (10)
+#define FAST_BIN_SIZE_START (ALIGNMENT)
+#define FAST_BIN_STEP (ALIGNMENT)
+#define FAST_BIN_SIZE_CAP                                                      \
+  CAP_CALC(FAST_BIN_SIZE_START, NUM_FAST_BINS, FAST_BIN_STEP)
+
+#define MAP_STEP_BY_TYPE_WIDTH (sizeof(MAP_ELMNT_TYPE) * 8)
+#define NUM_ELMNTS_NECESSARY_TO_MAP ((NUM_BINS) / MAP_STEP_BY_TYPE_WIDTH)
+
+#define BIN_MAP_INDEX(b) (b / MAP_STEP_BY_TYPE_WIDTH)
+#define CORRESPONDING_BIT_INDEX(bin_ix) (bin_ix & (MAP_STEP_BY_TYPE_WIDTH - 1))
+#define CORRESPONDING_BIT(bin_ix) ((size_t)1 << CORRESPONDING_BIT_INDEX(bin_ix))
+
+#define MARK_BIN(a, bin_ix)                                                    \
+  (a.binmap[BIN_MAP_INDEX(bin_ix)] |= (CORRESPONDING_BIT(bin_ix)))
+
+#define UNMARK_BIN(a, bin_ix)                                                  \
+  (a.binmap[BIN_MAP_INDEX(bin_ix)] &= ~CORRESPONDING_BIT(bin_ix))
+
+#define READ_BINMAP(a, bin_ix)                                                 \
+  (a.binmap[BIN_MAP_INDEX(bin_ix)] & CORRESPONDING_BIT(bin_ix))
+
+// The repositioning trick glibc leverages for faking BlockPtr's in bins
+// NOTE: first element of the list (bin[0], bin[1]) are for unsorted bin
+#define BLK_PTR_IN_BIN_AT(a, i) ((BlockPtr)(&a.bins[i * 2]))
+
+#define BLK_PTR_OF_UNSORTED(a) ((BlockPtr)(&a.bins[0]))
+
+#define IS_LONE_SENTINEL(blk) (blk->next == blk && blk->prev == blk)
+
+// Bare in the sense that SLOTS_FOR_BLOCK_OFFSET_ALIGNMENT is not accounted for,
+// the index returned must be retrieved with BLK_PTR_IN_BIN_AT to
+// properly index the corresponding bin.
+// NOTE: small bin starts at index 1, thus we don't -1.
+#define GET_LARGE_BIN_IDX(aligned_req_size)                                    \
+  (IS_SMALL(aligned_req_size)                                                  \
+       ? 0                                                                     \
+       : ((aligned_req_size - LARGE_BIN_SIZE_START) / LARGE_BIN_STEP))
+#define GET_BARE_BIN_IDX(aligned_req_size)                                     \
+  (aligned_req_size <= SMALL_BIN_SIZE_CAP                                      \
+       ? (aligned_req_size / SMALL_BIN_STEP)                                   \
+       : LARGE_BIN_IDX_SHIFT(GET_LARGE_BIN_IDX(aligned_req_size)))
+
+#define CAN_BE_FAST_BINNED(aligned_req_size)                                   \
+  (aligned_req_size >= FAST_BIN_SIZE_START &&                                  \
+   aligned_req_size <= FAST_BIN_SIZE_CAP)
+#define GET_FAST_BIN_IDX(aligned_req_size)                                     \
+  (aligned_req_size / FAST_BIN_STEP - 1)
+
+#define MOVE_FAST_BIN_TO_NEXT(a, idx)                                          \
+  {                                                                            \
+    a.fastbins[idx] = a.fastbins[idx]->next;                                   \
+  }
+
+// NOTE: thread-safety is not a concern at the moment,
+// thus we only have 2 arenas: sbrk arena and mmap arena.
+struct Arena {
+  BlockPtr head;
+  BlockPtr tail;
+  /*
+   * unsorted bin: bins[0]
+   * small bins: bins[1:NUM_SMALL_BINS+1] with values
+   *    [SMALL_BIN_SIZE_START : SMALL_BIN_SIZE_CAP : MIN_ALIGNMENT]
+   *    where generally SMALL_BIN_SIZE_CAP <= 512
+   * large bins:
+   *    bins[NUM_SMALL_BINS*2 : NUM_SLOTS_IN_BIN : LARGE_BIN_SIZE_SPACING]
+   *    sorted (desc. order).
+   * each bin has 2 pointers fw, bk to line up a doubly linkedlist,
+   * thus the multiplication.
+   *
+   * fast bins:
+   *    [FAST_BIN_SIZE_START: FAST_BIN_SIZE_CAP: FAST_BIN_STEP]
+   *    Singly linked list.
+   *
+   */
+  BlockPtr bins[NUM_SLOTS_IN_BIN];
+  // If a bin is empty, the bit that the corresponds to the index of that bin is
+  // set to 0. Since we have NUM_CHUNK_SIZES bins and not all architectures have
+  // a type that can  support it we "dynamically" arrange an array if we need
+  // more than one.
+  // NOTE: We are lazy when it comes to keeping the binmaps perfectly
+  // up-to-date. Housekeeping in that sense is expensive, so a 0 on a bitmap
+  // read means a definite empty, 1 on the other hand does not guarantee a
+  // populated bin.
+  MAP_ELMNT_TYPE binmap[NUM_ELMNTS_NECESSARY_TO_MAP];
+  // range of [FAST_BIN_SIZE_START : FAST_BIN_SIZE_CAP : ALIGNMENT] bytes.
+  // Fastbins are not meant to be fused with other chunks, except they are
+  // being consolidated on purpose. Thus, we keep those chunks as 'used' to
+  // avoid pre-mature fusion.
+  BlockPtr fastbins[NUM_FAST_BINS];
+  size_t total_bytes_allocated;
+};
+
+struct MMapArena {
+  size_t total_bytes_allocated;
+  size_t num_mmapped_regions;
+};
+
+BlockPtr get_block_from_main_arena(const ArenaPtr, void *);
+BlockPtr get_block_from_mmapped_arena(const MMapArenaPtr, void *);
+void allocated_bytes_update(size_t *, const int);
+#ifdef TESTING
+size_t num_blocks_in_unsorted_bin(const ArenaPtr);
+void print_bin(ArenaPtr, const size_t);
+#endif
+
+extern void debug_write_str(const char *);
+extern void debug_write_ptr(const void *);
