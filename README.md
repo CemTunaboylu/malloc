@@ -1,12 +1,20 @@
-# malloc — A Minimal Educational Memory Allocator
+# malloc (Educational Memory Allocator)
 
 [![C Standard](https://img.shields.io/badge/C-17-blue.svg)](https://en.cppreference.com/w/c/17)
 ![GCC](https://img.shields.io/badge/gcc-%3E%3D%2013-blue)
 ![Clang](https://img.shields.io/badge/clang-%3E%3D%2017-blue)
 ![Tests](https://img.shields.io/badge/tests-Acutest-green.svg)
 
-A small, test-driven, single-translation-unit implementation of `malloc`, `calloc`, `realloc`, and `free`.
-This project is intentionally simple, heavily instrumented, and designed as a learning tool for understanding heap allocators, block splitting/merging, alignment, and system call wrappers.
+This project is a from-scratch implementation of `calloc` / `free` / `malloc` / `realloc` in C, inspired by glibc malloc internals.
+
+It is intended as an educational and experimental allocator,
+focusing on understanding real-world allocator design
+tradeoffs rather than covering every edge case required by
+production allocators.
+
+The codebase is heavily instrumented and unit-tested,
+and many design choices mirror glibc behavior
+(e.g. its laziness in some bookkeeping paths).
 
 ## Updates
 
@@ -14,89 +22,194 @@ This project is intentionally simple, heavily instrumented, and designed as a le
 
 - Latest branch with [mocked syscals and deprecated `brk` APIs](../../tree/sys_call_mocks)
 
-
 📘 **Deep Dive: Linux vs macOS Dynamic Linking Behavior**
 
 👉 See the full investigation in the project wiki: The full process (ELF symbol resolution, Mach-O two-level namespaces, `PLT`/`GOT`, and `dyld` interposition and the allocator dynamics) with proofs reside in **[Dynamic Linking Deep Dive](../../wiki/Dynamic_Linking_Deep_Dive)**
 
-## Features
+### Goals
 
-✔ Fundamental alignment
+- Implement a realistic allocator with behavior comparable to glibc
+- Support `calloc`, `free`, `malloc`, `realloc`
+- Model fastbins, unsorted bins, and coalescing semantics
+- Support sbrk-backed and mmap-backed allocations
+- Make allocator invariants explicit and testable
+- Not losing clarity and debuggability over raw performance concerns
 
-All user pointers returned by `malloc()` satisfy `alignof(max_align_t)`.
+### Non-goals
 
-✔ First-fit allocation strategy
+- Full POSIX / glibc ABI compatibility
+- Thread safety
+- Absolute peak performance
 
-The allocator maintains a doubly-linked list of blocks:
+## High-Level Design
 
-`[block][block][block]...`
+### Arenas
 
-✔ Block splitting
+The allocator maintains a primary arena which owns:
 
-A free block that is larger than needed is split into:
+- Fastbins (singly-linked lists for small chunks)
+- Unsorted bin
+- Bookkeeping metadata (bin bitmaps, total allocated memory, debug markers)
 
-`[allocated block][free remainder block]`
+There is no multi-arena or per-thread arena support. Just an additional arena for
+mmapped memory chunks.
 
-✔ Forward and backward coalescing
+### Chunk / Block Layout
 
-When `free()` marks a block as free, adjacent free blocks are merged:
-
-- Forward: blk -> next
-- Backward: prev <- blk
-
-✔ Debug counters (TESTING-only)
-
-In TESTING builds, the allocator tracks calls to:
-
-- `malloc`
-- `free`
-- `realloc`
-- `calloc`
-- `fuse_fwd` / `fuse_bwd`
-- `realloc` grow/shrink events
-
-✔ System call abstraction
-
-All OS interactions are funneled through:
-
-- `mm_sbrk`
-- `mm_brk`
-- `mm_mmap`
-- `mm_munmap`
-
-These are fully stubbed for testing and demonstrate differences between glibc and older BSD/macOS prototypes.
-
-✔ Deterministic, single-process Acutest suite
-
-Tests don’t fork; everything runs inside one process for determinism.
-
-## Project Layout
+Each block in the heap has the following layout:
 
 ```md
-malloc/
-├── README.md                ← you are here
-├── Makefile                 ← builds allocator + tests
-├── Dockerfile               ← reproducible build environment
-├── Dockerfile.investigation ← reproducible investigation environment
-├── include/
-│   └── malloc/malloc.h      ← exported API symbols
-├── src/
-│   ├── alignment.c          ← alignment helpers
-│   ├── internal.h           ← block structure + allocator internals
-│   ├── malloc.c             ← main allocator
-│   ├── mm_debug.*           ← debug counters (TESTING)
-│   ├── non_allocating_print.c
-│   ├── probes.c             ← test inspection helpers
-│   └── sys_call_wrappers.c  ← brk/sbrk/mmap wrappers
-├── tests/
-│  ├── acutest.h
-│  ├── log.c                 ← logging mechanisms for testing 
-│  ├── test_malloc.c
-└── githooks/                ← githooks (here for version control), `make install-git-hooks` to install them
-    └── pre-push             ← pre-push hook, runs `test-interpose` if on mac + `make test-container` as guard before pushing
+| prev true size              |  ← prev. chunks true size (flags removed) if it is free
++-----------------------------+
+| flagged size                |  ← bytes in payload with LSBs marking <is prev. free><is free><is mmapped>
+| next                        |  ← pointer to next block if free and in any bin
+| prev                        |  ← pointer to previous block if free and in any bin
++-----------------------------+
+|                             |  ← user memory of aligned requested size
+|                             |
+|                             |
+| true size                   |  ← size (flags removed) i.e. true size if block is free
++-----------------------------+
 ```
 
-## Building & Running
+Each allocation is represented by a Block:
+
+- Header contains size and flags
+- User memory immediately follows the header
+- When a block is free, its size is also written to its footer so that next contiguous header can easily retrieve it when coalescing/fusing.
+
+This enables:
+
+- O(1) backward coalescing
+- Minimize cache misses under heavy pressure (to be proved with benchmarks)
+- Encoding `prev_free` information without storing an explicit prev pointer
+
+Flags & Metadata
+
+- Allocation state is encoded using low bits in the size field (alignment requirements spare 3-4 least significand bits)
+- `prev_free` is propagated eagerly/lazily depending on context
+- Fastbin chunks are treated as “in use” to avoid premature fusion until they are consolidated
+
+## Allocation Strategy
+
+### Implemented malloc algorithm
+
+Given the requested size `size`:
+
+1. Align the size.
+2. If aligned size is larger than `MIN_CAP_FOR_MMAP` (128 KiB), mmap.
+3. Else if arena does not have any allocated chunks, allocate aligned size with sbrk.
+4. Else
+	1. If aligned size is small/eligible for fast bins.
+		1. Try fast bin, if found return that block.
+		2. If no chunk is found in fastbins, try small bins (check small bin for exact size), if found return that chunk.
+		3. If no chunk is found in that small bin, do not go to next larger small bin (glibc does the same), try unsorted bin, if a chunk as big as (split before returning) or larger than aligned size is found, return that.
+		4. If still no chunk found, consolidate fastbins (fuse them and put them to unsorted bin).
+		5. Try unsorted again as above step.
+		6. If still no chunk is found, request new chunk via sbrk from OS i.e. sysmalloc.
+	2. If aligned size is large.
+		1. Consolidate fast bins.
+		2. Try unsorted bins and fuse as you go to satisfy the required aligned size, if found return that. If the found one is large enouhg, split first.
+		3. If not found, try the large bin with the appropriate range of sizes, if found split if necessary and return.
+
+🔑 The unsorted bin searches mentioned above fuses blocks at hand if possible and if it does not satisfy the requirement,
+it is put in the appropriate bin (either a small or large bin).
+
+### Small Allocations
+
+- Sizes eligible for fastbins are placed into fastbins on free
+- Fastbins are singly-linked and LIFO
+- No immediate coalescing
+
+### Fastbin Consolidation
+
+- Fastbins are periodically consolidated into the unsorted bin
+- During consolidation:
+	- Chunks are moved one-by-one
+	- Full forward and backward coalescing is performed
+	- Bin bitmaps are updated lazily (mirroring glibc behavior)
+
+### Large Allocations
+
+- Requests above MIN_CAP_FOR_MMAP are fulfilled via mmap
+- Large reallocations may transition between sbrk and mmap
+
+### Reallocation
+
+realloc supports all four transitions:
+
+- SBRK → SBRK (in-place growth or move)
+- SBRK → MMAP
+- MMAP → SBRK
+- MMAP → MMAP (via mremap)
+
+If in-place growth is not possible:
+
+1. A new block is allocated
+2. User memory is deep-copied
+3. Metadata flags are transferred
+4. The old block is freed
+
+### Implemented realloc algorithm
+
+1. Check for edge cases
+	1. If given pointer is null, malloc the given size
+	2. If given size is 0, free the pointer
+	3. If cannot reconstruct header from the given memory chunk, return NULL
+	3. If the given size and the blocks size is equal, do nothing and return the given pointer
+2. Switch over 4 possibilities given above
+	1. SBRK → SBRK 
+		1. Try growing in place by fusing with forward blocks until enough size is obtained (larger is fine, split before returning )
+		2. If cannot still satisfy the requirement: perform malloc new, deep-copy, free old routine
+		3. If satisfies split if too large, and return (no mem move needed)
+	2. SBRK → MMAP
+		1. perform malloc new (mmap), deep-copy, free sbrk (release occurs only if the block is the top block i.e. tangent to the heap's BRK) chunk routine
+	3. MMAP → SBRK
+		1. perform malloc new (sbrk), deep-copy, free (munmap) chunk routine
+	4.  MMAP → MMAP (via mremap)
+		1. mremap (handles deep-copy and freeing itself)
+
+Any error during the syscalls fails and halts the given allocation attempt.
+
+🔑 Deep copy routine uses memmove which handles overlapping memory regions.
+
+### Implemented free algorithm
+
+1. Handle edge cases
+	1. If given pointer is null, do nothing silently return
+	2. If cannot reconstruct the header, do nothing silently return (in tests, `FREE_ON_BAD_PTR` is marked )
+	3. If alraedy free (double free), print a message (during testing `DOUBLE_FREE` is marked) and do nothing.
+2. Mark the block as free and propagate the information via putting the true size in footer and setting the next blocks bit flag if not the top block
+3. If mmapped, munmap
+4. If not the top chunk and is eligible for fast bins (size fits), insert the block in appropriate fast bin and return. 
+4. If the top chunk or large, fuse with contiguous chunks
+5. If not the top chunk, insert the block in unsorted bin and return
+5. If the top chunk, release the block i.e. return the memory region back to OS. 
+
+🔑 Modern kernels rarely shrink the program break. To make testing this path easier, we diverge here.
+
+## Testing & Debugging
+
+### Unit Tests
+
+- Deterministic, single process Acutest testing suite. Tests don’t fork; everything runs inside one process for determinism.
+- Tests cover:
+	- Allocation and freeing
+	- Fastbin behavior
+	- Coalescing correctness
+	- Reallocation edge cases
+	- Accounting invariants
+
+### Instrumentation
+- Extensive internal debug markers (MM_MARK)
+- Optional verbose logging
+- Designed to be run under:
+	- UBSan
+	- gdb / lldb
+- (`mm_sbrk`, `mm_brk`, `mm_mmap`, etc.) system call wrappers are used to mock the syscalls for deterministic behavior in testing.
+
+
+🔑 AddressSanitizer is intentionally disabled when overriding system malloc.
 
 ### Prerequisites
 
@@ -104,9 +217,11 @@ malloc/
 - GCC or Clang
 - Linux or macOS
 
-### Build + Run Tests
+## Build + Run Tests
 
-`make clean test`
+```sh
+make clean test
+```
 
 ### Build and test inside Docker
 
@@ -122,119 +237,146 @@ If `USE_GDB` is set, directly execs into the gdb session of the test binary, oth
 make investigation-container  [USE_GDB=] 
 ```
 
-## Design Overview
+Common flags:
 
-### Block Layout
+- `ENABLE_LOG` – enable verbose allocator logging
+- `TESTING` – enable test-only hooks and assertions
+- `SHOW_SBRK_RELEASE_SUCCEEDS` – emulate successful memory release in tests
 
-Each block in the heap has the following layout:
+## Project Status
+
+This project is actively developed and frequently refactored as allocator behavior
+is refined and better understood.
+
+Expect:
+
+- Breaking internal changes
+- Additional invariants
+- More glibc-inspired behavior over time
+
+## Disclaimer
+
+This allocator is not intended for production use.
+
+It is designed for:
+
+- Learning how real allocators work
+- Experimenting with allocator policies
+- Testing ideas in a controlled environment
+
+Use at your own risk.
+
+## Allocator Invariants
+
+The following invariants are relied upon throughout the codebase. Many unit tests implicitly assert these properties.
+
+### Structural Invariants
+
+- Blocks are contiguous within an arena
+- Each block knows its true size via its header
+- If a block is free, its size is also written to its footer
+- A block can only be coalesced with neighbors that are also free (fastbins excluded)
+
+### Metadata Invariants
+
+- Allocation state is encoded in low bits of the size field
+- `prev_free` information projects the next block’s metadata
+- Fastbin chunks are temporarily marked as “in use” to prevent premature fusion
+
+### Bin Invariants
+
+- Fastbins are singly-linked and LIFO
+- Unsorted bin may temporarily contain chunks of any size
+- Bin bitmaps may be stale until a full consolidation pass
+
+🔑 As glibc does it, bitmaps are lazily bookkept. An unset bit is a definite indicator of an empty bin,
+but a set bit does not guarantee the bin is populated. The first try that unravels the false guarantee unsets the bit.
+
+### Violating any of these invariants usually manifests as:
+
+- Invalid backward coalescing
+- Footer corruption
+- Crashes during fastbin consolidation
+
+## Codebase Tour
+
+A rough guide to where things live:
+
+- block.* – block layout, headers, footers, and basic navigation
+- malloc.c – main allocation/free paths and fastbin logic
+- arena.* – arena state, bin maps, and global bookkeeping
+- mm_debug.* – debug counters, markers, and instrumentation
+- tests/ – unit tests (Acutest-based)
+
+The core allocator logic resides in malloc.c, start from there to understand the allocator’s core behavior.
+
+## Project Layout
 
 ```md
-+-----------------------------+
-| size                        |  ← bytes in payload
-| next                        |  ← pointer to next block
-| prev                        |  ← pointer to previous block
-| end_of_alloc_mem            |  ← end of user memory
-| free (int)                  |
-+-----------------------------+
+malloc/
+├── README.md                ← you are here
+├── Makefile                 ← builds allocator + tests
+├── Dockerfile               ← reproducible build environment
+├── Dockerfile.investigation ← reproducible investigation environment
+├── include/
+│   └── malloc/malloc.h      ← exported API symbols
+├── src/
+│   ├── alignment.c          ← alignment helpers
+│   ├── arena.c              ← procedures concerning Arenas 
+│   ├── arena.h              ← macros, declarations and structures concerning Blocks 
+│   ├── block.c              ← procedures concerning Blocks 
+│   ├── block.h              ← declarations and structures concerning Blocks 
+│   ├── internal.h           ← block structure + allocator internals
+│   ├── malloc.c             ← main allocator
+│   ├── mm_debug.*           ← debug counters (TESTING)
+│   ├── non_allocating_print.c
+│   ├── probes.c             ← test inspection helpers
+│   └── sys_call_wrappers.c  ← brk/sbrk/mmap wrappers
+├── tests/
+│   ├── acutest.h
+│   ├── log.c                ← logging mechanisms for testing 
+│   └── test_malloc.c  
+└── githooks/                ← githooks (here for version control), `make install-git-hooks` to install them
+    └── pre-push             ← pre-push hook, runs `test-interpose` if on mac + `make test-container` as guard before pushing
 ```
 
-The block header is intentionally aligned and verified in tests.
+### Design Notes & Glibc Parallels
 
-## Allocation Flow
+This allocator intentionally mirrors several glibc behaviors:
 
-1. Align the requested size
-2. Search for a suitable free block (first-fit)
-3. Split the block if large enough
-4. Return pointer to start of the requested allocated memory
+- Lazy bin bitmap updates
+- Fastbins delaying coalescing
+- Unsorted bin as a staging area
+- Small and large bin behaviors, granularity
 
-## Freeing Flow
+However, it also diverges deliberately:
 
-1. Validate pointer belongs to the allocator
-2. Mark block as free
-3. Fuse forward
-4. Fuse backward
-5. If block is at the heap tail, attempt to shrink the heap (may fail on modern OSes)
+- Single arena only (mmap-arena is separate)
+- No thread safety
+- Reduced header size experiments
+- Strong emphasis on explicit invariants
 
-**Note**: Modern kernels rarely shrink the program break — the test suite accounts for this.
+These differences are intentional and serve educational clarity.
 
-## Testing
+## Development Workflow Tips
 
-Tests live in `tests/test_malloc.c` and cover:
+- Prefer running tests under UBSan
+- Enable ENABLE_LOG when debugging fusion issues
+- Use MM_MARK counters to trace allocator decisions
+- When debugging corruption, verify:
+	- footer placement
+	- prev_free propagation
+	- fastbin → unsorted transitions
 
-- alignment
-- block shape introspection
-- invalid/valid pointer validation
-- fusion logic
-- calloc zeroing
-- realloc grow/shrink semantics
-- data copy correctness
-- releasing memory
+## Future Directions
 
-All tests enforce strict debug counters in TESTING mode. Currently, during testing, system calls are mocked and operate on a pre-allocated stack buffer. Only custom allocator calls are tested since we no longer override libc allocators. Anything else including acutest use libc implementations effectively isolating our test cases. This way, we also are OS-agnostic (eliminating release problems) in our tests by mimicking the desired behaviour with mock system calls.
+Planned or possible extensions:
 
-## Debugging & Investigation Tools
+- Giving away the `next`, `prev` pointers to the user when in use, as glibc squeezes in more performance like this.
+- Reducing worst-case large bin insertions/retrievals by 2D linkedlists, grouping same sizes chunks as a 'fork' in that bin's linkedlist.
+- Experimenting with some heuristics e.g. moving averages of allocated sizes, rate of change in allocated sizes.
+- Additional integrity checks in debug builds
+- Better visualization of arena state
+- Experimental policies (e.g. different fastbin thresholds).
 
-The project includes several tools to help inspect allocator behavior:
-
-### Non-allocating print helpers   (src/non_allocating_print.c)
-
-Safe logging routines that do not allocate, used when debugging allocator internals.
-
-### Callsite tracking
-
-Enabled via `-DTRACK_RET_ADDR`. Records return addresses and block metadata for up to 1024 malloc callsites, printed via `LATEST_CALLERS()`.
-
-### OS Interaction Logs
-
-All system call wrappers (mm_sbrk, mm_brk, mm_mmap, etc.) can be logged for deterministic behavior in testing.
-
-### Investigation container
-
-Build and drop into a GDB-capable environment:
-
-```sh
-make investigation-container USE_GDB=1
-```
-
-or disable GDB to explore the container:
-
-```sh
-make investigation-container USE_GDB=
-```
-
-## Design Guarantees
-
-The allocator guarantees:
-
-- All the memory allocated by the allocators satisfy max alignment required by the system that it runs on dynamically
-  - `malloc()`, `calloc()` and `realloc` returns aligned memory (`_Alignof(max_align_t)`)
-- First-fit search
-- Deterministic block header layout
-- Fusion (forward and backward)
-- Optional callsite tracking
-- OS interactions abstracted through deterministic wrappers
-- Single-threaded correctness
-- Strict block structure and pointer validity checking in TESTING mode
-
-This project intentionally avoids:
-
-- Thread safety (for now)
-- Per-thread arenas (for now)
-- mmap-backed large allocations (stubbed only, for now)
-- ASan compatibility (we override malloc)
-- Production-grade fragmentation handling
-
-The goal is educational clarity, not completeness.
-
-## Future Work
-
-- Real mmap large-allocation path
-- Proper return of freed pages using mmap/munmap
-- Over-aligned `aligned_alloc`
-- Stress tests + randomized fuzzing
-- Git hooks for formatting/linting
-
-## License
-
-This repository is for educational use.
-Acutest is MIT-licensed by Martin Mitáš and Garrett D’Amore.
+The project is expected to evolve as allocator understanding deepens :slightly_smiling_face:.
