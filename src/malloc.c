@@ -88,7 +88,10 @@ static inline BlockPtr get_block_from_arenas(void *p) {
   return bp;
 }
 
-static inline void correct_tail_if_eaten(const BlockPtr blk) {
+#ifndef TESTING
+static inline
+#endif
+    void correct_tail_if_eaten(const BlockPtr blk) {
   int is_tail_eaten =
       (blk < a_head.tail) && ((void *)a_head.tail <= (void *)next(blk));
   if (is_tail_eaten)
@@ -177,7 +180,14 @@ static inline void insert_in_unsorted_bin(BlockPtr blk) {
   MM_MARK(PUT_IN_UNSORTED_BIN);
 }
 
-static inline void insert_in_fastbin(BlockPtr blk) {
+#ifndef TESTING
+static inline
+#endif
+    void insert_in_fastbin(BlockPtr blk) {
+  // Fastbins are not meant to be fused with other chunks, except we
+  // consolidate them on purpose. Thus, we keep it as 'used' to avoid
+  // pre-mature fusion.
+  mark_as_used(blk);
   const size_t true_size = get_true_size(blk);
   const size_t idx = GET_FAST_BIN_IDX(true_size);
   if (NULL == a_head.fastbins[idx])
@@ -198,8 +208,7 @@ static inline void hot_insert_in_appropriate_bin(BlockPtr blk) {
 }
 
 static inline BlockPtr fast_find(const size_t aligned_size) {
-  int can_be_fast = CAN_BE_FAST_BINNED(aligned_size);
-  if (!can_be_fast) {
+  if (!CAN_BE_FAST_BINNED(aligned_size)) {
     return NULL;
   }
   const size_t idx = GET_FAST_BIN_IDX(aligned_size);
@@ -210,27 +219,18 @@ static inline BlockPtr fast_find(const size_t aligned_size) {
 
   MOVE_FAST_BIN_TO_NEXT(a_head, idx);
   MM_MARK(FASTBINNED);
+  head->next = NULL;
   return head;
 }
 
 static inline int detaching_fuse_fwd(BlockPtr blk) {
-  BlockPtr nxt = next(blk);
-  const size_t nxt_true_size = get_true_size(nxt);
-  // If nxt is in a fast bin, we cannot guarantee that it is removed if it is a
-  // head. Thus, we need to check it explicitly, and if it is a head in a fast
-  // bin, detach it. If it is in bins, fuse_next internally removes the block
-  // from the linkedlist.
-  BlockPtr nxt_next = nxt->next;
+  // The only chunks that can be fused together are from bins. Fastbin chunkss
+  // prevent pre-mature fusion by marking themselves 'used'. When they are being
+  // deliberately consolidated, they are moved one by one to unsorted bin, thus
+  // they will be merged from there.
   const int did_fuse_next = fuse_next(blk);
   if (-1 == did_fuse_next)
     return -1;
-  if (CAN_BE_FAST_BINNED(nxt_true_size)) {
-    const size_t n_idx = GET_FAST_BIN_IDX(nxt_true_size);
-    BlockPtr n_head = a_head.fastbins[n_idx];
-    if (NULL != n_head && nxt == n_head) {
-      a_head.fastbins[n_idx] = nxt_next;
-    }
-  }
   // fuse_next removes the chunk from the list but does not check if it gets
   // emptied. We intentionally are lazy as glibc to not fix the bitmap
   // immediately.
@@ -239,28 +239,17 @@ static inline int detaching_fuse_fwd(BlockPtr blk) {
 }
 
 static inline int detaching_fuse_bwd(BlockPtr *blk) {
-  BlockPtr prv = prev(*blk);
-  const size_t prv_true_size = get_true_size(prv);
-  // If nxt is in a fast bin, we cannot guarantee that it is removed if it is a
-  // head. Thus, we need to check it explicitly, and if it is a head in a fast
-  // bin, detach it. If it is in bins, fuse_next internally removes the block
-  // from the linkedlist.
-  BlockPtr prv_next = prv->next;
+  // The only chunks that can be fused together are from bins. Fastbin chunkss
+  // prevent pre-mature fusion by marking themselves 'used'. When they are being
+  // deliberately consolidated, they are moved one by one to unsorted bin, thus
+  // they will be merged from there.
   const int did_fuse_prev = fuse_prev(blk);
   if (-1 == did_fuse_prev)
     return -1;
-  if (CAN_BE_FAST_BINNED(prv_true_size)) {
-    const size_t n_idx = GET_FAST_BIN_IDX(prv_true_size);
-    BlockPtr n_head = a_head.fastbins[n_idx];
-    if (NULL != n_head && prv == n_head) {
-      a_head.fastbins[n_idx] = prv_next;
-    }
-  } else {
-    // fuse_prev removes the chunk from the list but does not check if it gets
-    // emptied. We intentionally are lazy as glibc to not fix the bitmap
-    // immediately.
-    // See the binmap notes on arena.h.
-  }
+  // fuse_prev removes the chunk from the list but does not check if it gets
+  // emptied. We intentionally are lazy as glibc to not fix the bitmap
+  // immediately.
+  // See the binmap notes on arena.h.
   return 0;
 }
 
@@ -271,6 +260,7 @@ static inline
   while (detaching_fuse_fwd(b) == 0) {
     MM_MARK(FUSE_FWD_CALLED);
   }
+  correct_tail_if_eaten(b);
 }
 
 #ifndef TESTING
@@ -280,6 +270,15 @@ static inline
   while (detaching_fuse_bwd(b) == 0) {
     MM_MARK(FUSE_BWD_CALLED);
   }
+  correct_tail_if_eaten(*b);
+}
+
+#ifndef TESTING
+static inline
+#endif
+    void fuse_with_neighbors(BlockPtr *b) {
+  fuse_fwd(*b);
+  fuse_bwd(b);
 }
 
 // Remove each block from each fast bin, fuse them as you go, put them into
@@ -290,25 +289,19 @@ static inline
     void consolidate_fastbins(void) {
   // Move blocks from fast bins while fusing along the way to unsorted bin.
   for (size_t f_idx = 0; f_idx < NUM_FAST_BINS; f_idx++) {
-    BlockPtr head = a_head.fastbins[f_idx];
-    if (NULL == head)
-      continue;
-    MM_MARK(CONSOLIDATED);
-    MM_ASSERT(head->next != head);
-    BlockPtr heads_next;
-    while (NULL != head) {
+    BlockPtr head;
+    while (NULL != a_head.fastbins[f_idx]) {
+      MM_MARK(CONSOLIDATED);
+      head = a_head.fastbins[f_idx];
       MM_ASSERT(head->next != head);
+      MOVE_FAST_BIN_TO_NEXT(a_head, f_idx);
+      // Fastbins are marked as used to prevent premature coalescing, thus we
+      // first need to mark them as free.
+      mark_as_free(head);
+      fuse_with_neighbors(&head);
       MM_ASSERT(is_free(head));
-      fuse_fwd(head);
-      fuse_bwd(&head);
-      MM_ASSERT(is_free(head));
-
-      correct_tail_if_eaten(head);
-      heads_next = head->next;
       insert_in_unsorted_bin(head);
-      head = heads_next;
     }
-    a_head.fastbins[f_idx] = NULL;
   }
 }
 
@@ -334,31 +327,28 @@ static inline
     // NOTE: To keep things simple, we pay the price of sorted insertion to
     // large bins.
     BlockPtr search_in_unsorted_consolidating(const size_t aligned_size) {
-  BlockPtr sentinel = BLK_PTR_OF_UNSORTED(a_head);
+  const BlockPtr sentinel = BLK_PTR_OF_UNSORTED(a_head);
   if (IS_LONE_SENTINEL(sentinel))
     return NULL;
   BlockPtr blk = sentinel->next;
   BlockPtr nxt = NULL;
-  while (sentinel != nxt) {
-    nxt = next(blk);
+  while (sentinel != blk) {
+    nxt = blk->next;
     MM_ASSERT(is_free(blk));
     remove_from_linkedlist(blk);
     if (IS_BLOCKS_SIZE_ENOUGH(blk, aligned_size)) {
-      remove_from_linkedlist(blk);
       MM_MARK(UNSORTED_BINNED);
-      break;
+      return blk;
     }
-    fuse_fwd(blk);
-    fuse_bwd(&blk);
-    correct_tail_if_eaten(blk);
+    fuse_with_neighbors(&blk);
     if (IS_BLOCKS_SIZE_ENOUGH(blk, aligned_size)) {
-      remove_from_linkedlist(blk);
       MM_MARK(UNSORTED_BINNED);
-      break;
+      return blk;
     }
     const size_t true_size = get_true_size(blk);
     const size_t bin_idx = GET_BARE_BIN_IDX(true_size);
     BlockPtr bin_sentinel = BLK_PTR_IN_BIN_AT(a_head, bin_idx);
+
     if (IS_SMALL(true_size)) {
       append(bin_sentinel, blk);
     } else {
@@ -371,14 +361,12 @@ static inline
     }
     if (0 == READ_BINMAP(a_head, bin_idx))
       MARK_BIN(a_head, bin_idx);
+
     blk = nxt;
   }
   // We don't normally check on unsorted bin's bitmap, thus we don't housekeep.
 
-  if (IS_LONE_SENTINEL(blk))
-    blk = NULL;
-
-  return blk;
+  return NULL;
 }
 
 static inline BlockPtr get_from_small_bin(const size_t aligned_size) {
@@ -413,6 +401,9 @@ static inline BlockPtr get_from_large_bin(const size_t aligned_size) {
   }
   BlockPtr larger =
       find_smallest_fitting_large_bin_block(sentinel, aligned_size);
+
+  if (get_true_size(larger) < aligned_size)
+    return NULL;
   BlockPtr larger_next = larger->next;
   if (larger_next && larger_next != sentinel &&
       get_true_size(larger_next) == aligned_size)
@@ -500,29 +491,13 @@ static inline void munmap(const BlockPtr blk) {
   allocated_bytes_update(&(ma_head.total_bytes_allocated), -back);
 }
 
-static inline void free_or_maybe_release_sbrked(BlockPtr blk) {
-  int is_at_tail = is_at_main_arena_tail(blk);
-  const int is_near_tail = next(blk) == CURRENT_BRK;
-  const size_t true_size = get_true_size(blk);
-  // If not at tail or near tail and small enough to fast bin, put it in the
-  // fast bin without fusing with any neighbors.
-  if (!is_at_tail && !is_near_tail && CAN_BE_FAST_BINNED(true_size)) {
-    insert_in_fastbin(blk);
-    return;
-  }
-
-  fuse_fwd(blk);
-  fuse_bwd(&blk);
-  correct_tail_if_eaten(blk);
-  const size_t back = SIZE_OF_BLOCK + true_size;
-
+#ifndef TESTING
+static inline
+#endif
+    void release(BlockPtr blk) {
+  remove_from_linkedlist(blk);
   const int is_at_head = is_at_main_arena_head(blk);
-  is_at_tail = is_at_main_arena_tail(blk);
-
-  if (!is_at_tail) {
-    insert_in_unsorted_bin(blk);
-    return;
-  }
+  const size_t back = SIZE_OF_BLOCK + get_true_size(blk);
 
   void *old_tail = CURRENT_BRK;
   MM_ASSERT((BlockPtr)old_tail == next(a_head.tail));
@@ -533,7 +508,6 @@ static inline void free_or_maybe_release_sbrked(BlockPtr blk) {
     return;
   }
 
-  // iff we truly release some pages, then we can project the change
   MM_ASSERT((char *)old_tail > (char *)CURRENT_BRK);
   MM_MARK(RELEASED);
   MM_ASSERT(a_head.total_bytes_allocated >= back);
@@ -543,6 +517,28 @@ static inline void free_or_maybe_release_sbrked(BlockPtr blk) {
   if (is_at_head) {
     a_head.head = NULL;
   }
+}
+
+static inline void free_or_maybe_release_sbrked(BlockPtr blk) {
+  int is_tail = is_at_main_arena_tail(blk);
+  // If not at tail and small enough to fast bin, put it in the
+  // fast bin without fusing with any neighbors.
+  if (!is_tail && CAN_BE_FAST_BINNED(get_true_size(blk))) {
+    insert_in_fastbin(blk);
+    return;
+  }
+
+  fuse_fwd(blk);
+  fuse_bwd(&blk);
+  correct_tail_if_eaten(blk);
+
+  is_tail = is_at_main_arena_tail(blk);
+
+  if (!is_tail) {
+    insert_in_unsorted_bin(blk);
+    return;
+  }
+  release(blk);
 }
 
 static inline int is_double_free(BlockPtr blk) {
@@ -701,6 +697,12 @@ void *realloc_from_sbrk_to_sbrk(BlockPtr blk, const size_t aligned_size) {
     BlockPtr new_blk = reconstruct_from_user_memory((const void *)n);
     deep_copy_user_memory(blk, new_blk);
     transfer_flags(blk, new_blk);
+    BlockPtr prv = prev(blk);
+    if (prv && is_free(prv))
+      propagate_free_to_next(prv);
+    else
+      propagate_used_to_next(prv);
+
     FREE(p);
     return n;
   }

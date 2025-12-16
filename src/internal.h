@@ -30,10 +30,14 @@ extern void _mm_tear_down_allocator(void);
 extern struct Arena a_head;
 extern struct MMapArena ma_head;
 
+BlockPtr search_in_unsorted_consolidating(const size_t);
 void append(BlockPtr sentinel, BlockPtr new_next);
 void consolidate_fastbins(void);
-void fuse_fwd(BlockPtr);
+void correct_tail_if_eaten(const BlockPtr);
 void fuse_bwd(BlockPtr *);
+void fuse_fwd(BlockPtr);
+void insert_in_fastbin(BlockPtr);
+void release(BlockPtr);
 #endif
 
 #define CURRENT_BRK mm_sbrk(0)

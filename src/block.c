@@ -44,7 +44,7 @@ size_t prev_size(const BlockPtr b) { return *((size_t *)b - 1); }
 // Assuming we know that the previous block is free
 BlockPtr prev(const BlockPtr b) {
   int p_size = (int)prev_size(b);
-  return (BlockPtr)((char *)b - (p_size + (int)SIZE_OF_BLOCK));
+  return (BlockPtr)((char *)b - (p_size + SIZE_OF_BLOCK));
 }
 
 #define SET 1
@@ -124,7 +124,7 @@ void *allocated_memory(const BlockPtr b) {
 }
 
 void *next(const BlockPtr b) {
-  return (void *)((char *)allocated_memory(b) + get_true_size(b));
+  return (void *)((char *)allocated_memory(b) + (int)get_true_size(b));
 }
 
 int is_at_brk(const BlockPtr b) { return (void *)b >= CURRENT_BRK; }
@@ -141,12 +141,15 @@ void switch_places_in_list(BlockPtr rem, BlockPtr put) {
 }
 
 void remove_from_linkedlist(const BlockPtr blk) {
+  if (!is_free(blk))
+    return;
   BlockPtr prev = blk->prev;
   BlockPtr next = blk->next;
   if (prev)
     prev->next = next;
   if (next)
     next->prev = prev;
+  blk->next = blk->prev = NULL;
 }
 
 void deep_copy_user_memory(const BlockPtr src, BlockPtr to) {
@@ -168,11 +171,14 @@ int fuse_next(BlockPtr b) {
   if (!is_next_fusable(b))
     return -1;
   BlockPtr nxt = next(b);
+
   b->size += SIZE_OF_BLOCK + get_true_size(nxt);
+
   remove_from_linkedlist(nxt);
 
   if (is_free(b)) {
     propagate_free_to_next(b);
+    remove_from_linkedlist(b);
   } else {
     propagate_used_to_next(b);
   }
@@ -191,6 +197,7 @@ int fuse_prev(BlockPtr *b) {
   BlockPtr bk = prev(cursor);
   bk->size += SIZE_OF_BLOCK + get_true_size(cursor);
   remove_from_linkedlist(cursor);
+  remove_from_linkedlist(bk);
 
   // We can assert this because realloc never tries to fuse with a previous
   // chunk, since it would have to move the user data to the previous chunk(s).
@@ -213,17 +220,25 @@ int is_next_fusable(const BlockPtr b) {
 int is_splittable(const BlockPtr blk, const size_t aligned_size) {
   if (is_mmapped(blk))
     return 0;
-  size_t remaining_size = get_true_size(blk) - aligned_size;
-  size_t min_splittable_total_block_size =
-      SIZE_OF_BLOCK + MIN_REQUIRED_SPLIT_SIZE;
-  return (remaining_size > min_splittable_total_block_size);
+  int remaining_size = get_true_size(blk) - aligned_size;
+  if (remaining_size <= 0)
+    return 0;
+  int min_splittable_chunk_size = SIZE_OF_BLOCK + MIN_REQUIRED_SPLIT_SIZE;
+  return (remaining_size >= min_splittable_chunk_size);
 }
 
 void split_block(BlockPtr b, const size_t aligned_size_to_shrink) {
   size_t bs_flags = get_flags(b);
+
+  const size_t true_size = get_true_size(b);
+  MM_ASSERT(true_size > aligned_size_to_shrink);
+  MM_ASSERT(true_size - aligned_size_to_shrink >
+            SIZE_OF_BLOCK + MIN_REQUIRED_SPLIT_SIZE);
+
   BlockPtr rem_free =
       (BlockPtr)((char *)allocated_memory(b) + aligned_size_to_shrink);
-  rem_free->size = get_true_size(b) - aligned_size_to_shrink - SIZE_OF_BLOCK;
+  rem_free->size =
+      true_size - ((int)aligned_size_to_shrink) - ((int)SIZE_OF_BLOCK);
   mark_as_free(rem_free);
 
   b->size = aligned_size_to_shrink;

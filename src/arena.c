@@ -30,11 +30,11 @@ static int sbrked_header_validation(const BlockPtr cand) {
 
 BlockPtr reconstruct_valid_header(void *p) {
   BlockPtr blk = reconstruct_from_user_memory(p);
-  if (!is_mmapped(blk)) {
-    if (!sbrked_header_validation(blk))
+  if (is_mmapped(blk)) {
+    if (get_true_size(blk) < MIN_CAP_FOR_MMAP)
       return NULL;
   } else {
-    if (get_true_size(blk) < MIN_CAP_FOR_MMAP)
+    if (!sbrked_header_validation(blk))
       return NULL;
   }
   if ((void *)allocated_memory(blk) != p) {
@@ -69,3 +69,41 @@ BlockPtr get_block_from_main_arena(const ArenaPtr ar_ptr, void *p) {
 
   return reconstruct_valid_header(p);
 }
+
+#ifdef TESTING
+
+size_t num_blocks_in_unsorted_bin(const ArenaPtr ar) {
+  const BlockPtr head = BLK_PTR_OF_UNSORTED((*ar));
+  BlockPtr cursor = head->next;
+  size_t counter = 0;
+  while (head != cursor) {
+    counter++;
+    cursor = cursor->next;
+  }
+  return counter;
+}
+
+extern void print_blk_to_stderr(const BlockPtr b);
+extern void print_arrow_to_stderr(void);
+
+void print_bin(ArenaPtr ar, const size_t idx) {
+  debug_write_str("--- Bin print ---\n");
+  BlockPtr sentinel = BLK_PTR_IN_BIN_AT((*ar), idx);
+  if (IS_LONE_SENTINEL(sentinel)) {
+    debug_write_str("Bin[");
+    debug_write_u64(idx);
+    debug_write_str("] is empty\n");
+    return;
+  }
+
+  BlockPtr b = sentinel->next;
+  print_blk_to_stderr(b);
+  b = b->next;
+
+  for (; b && sentinel != b; b = b->next) {
+    print_arrow_to_stderr();
+    print_blk_to_stderr(b);
+  }
+  debug_write_str("--- Bin print end ---\n");
+}
+#endif

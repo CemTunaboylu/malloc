@@ -92,6 +92,37 @@ extern void *mm_realloc(void *, size_t);
     }                                                                          \
   }
 
+#define ASSERT_FASTBIN_HAS(f_idx, num)                                         \
+  {                                                                            \
+    const BlockPtr head = a_head.fastbins[f_idx];                              \
+    if (num == 0) {                                                            \
+      TEST_ASSERT_(NULL == head, "fast bin head must be NULL");                \
+    } else if (NULL == head) {                                                 \
+      TEST_ASSERT_(NULL == head, "fast bin head must NOT be NULL");            \
+    } else {                                                                   \
+      BlockPtr cursor = head->next;                                            \
+      size_t counter = 1;                                                      \
+      while (NULL != cursor && NULL != cursor->next) {                         \
+        counter += 1;                                                          \
+        cursor = cursor->next;                                                 \
+      }                                                                        \
+      TEST_ASSERT_(counter == num, "fast bin must have %lu chunks, got %lu",   \
+                   num, counter);                                              \
+    }                                                                          \
+  }
+
+#define ASSERT_FASTBINS_EMPTY()                                                \
+  for (size_t f_idx = 0; f_idx < NUM_FAST_BINS; f_idx++) {                     \
+    TEST_ASSERT_(NULL == a_head.fastbins[f_idx],                               \
+                 "fastbins[%lu] should have been empty", f_idx);               \
+  }
+
+#define ASSERT_UNSORTED_BIN_EMPTY()                                            \
+  {                                                                            \
+    TEST_ASSERT_(IS_LONE_SENTINEL(BLK_PTR_OF_UNSORTED(a_head)),                \
+                 "unsorted bin should have been empty");                       \
+  }
+
 #ifdef ENABLE_LOG
 #define LOG(...)                                                               \
   do {                                                                         \
@@ -104,9 +135,6 @@ extern void *mm_realloc(void *, size_t);
   } while (0)
 #endif
 
-static size_t base_total_blocks;
-static size_t base_free_blocks;
-
 static void check_and_reset_all_markers_unset(void) {
   for (size_t ix = 0; ix < NUM_MARKERS; ix++) {
     TEST_CHECK_(0 == markers[ix],
@@ -116,38 +144,92 @@ static void check_and_reset_all_markers_unset(void) {
   }
 }
 
-static void check_all_arena_heads_are_null(void) {
-  TEST_CHECK(NULL == a_head.head);
-  TEST_CHECK(NULL == a_head.tail);
-  TEST_CHECK(0 == ma_head.num_mmapped_regions);
-  TEST_CHECK(0 == ma_head.total_bytes_allocated);
+void ensuring_free(void *p);
+
+static void tear_heap_down(void) {
+  const size_t pre_num_in_unsorted = num_blocks_in_unsorted_bin(&a_head);
+  consolidate_fastbins();
+  size_t num_in_unsorted = num_blocks_in_unsorted_bin(&a_head);
+  const size_t diff = (num_in_unsorted - pre_num_in_unsorted);
+  TEST_CHECK_(markers[CONSOLIDATED] >= diff, "consolidated %lu != %lu",
+              markers[CONSOLIDATED], diff);
+  MM_RESET_MARKER(CONSOLIDATED);
+  TEST_CHECK(markers[PUT_IN_UNSORTED_BIN] >= diff);
+  MM_RESET_MARKER(PUT_IN_UNSORTED_BIN);
+  // Everything in fastbins are put in unsorted bin. Let's ask for a memory that
+  // is way too big so that all will be put in their appropriate bins (small or
+  // large bins).
+  BlockPtr blk = search_in_unsorted_consolidating((size_t)MIN_CAP_FOR_MMAP);
+  TEST_CHECK_(
+      NULL == blk,
+      "[tear_down] search_in_unsorted_consolidating should have returned NULL");
+  BlockPtr unsorted_sentinel = BLK_PTR_OF_UNSORTED(a_head);
+  TEST_CHECK_(IS_LONE_SENTINEL(unsorted_sentinel),
+              "[tear_down] unsorted bin should have been emptied");
+
+  BlockPtr head = a_head.head;
+  if (head) {
+    fuse_fwd(head);
+    remove_from_linkedlist(head);
+    if (!is_free(head)) {
+      ensuring_free(allocated_memory(head));
+    } else {
+      release(head);
+    }
+    if (num_in_unsorted > 0)
+      num_in_unsorted--;
+    MM_ASSERT_MARKER(RELEASED, 1);
+    TEST_CHECK_(markers[FUSE_FWD_CALLED] >= num_in_unsorted,
+                "fuse_fwd %lu != %lu", markers[FUSE_FWD_CALLED],
+                num_in_unsorted);
+    MM_RESET_MARKER(FUSE_FWD_CALLED);
+    MM_RESET_MARKER(FUSE_BWD_CALLED);
+  }
+}
+
+static void check_main_arena_bins_are_empty(void) {
+  for (size_t i = 0; i < SLOTS_FOR_BLOCK_OFFSET_ALIGNMENT; i++) {
+    TEST_CHECK_(0 == a_head.bins[i], "block offset must have been null");
+  }
+  ASSERT_UNSORTED_BIN_EMPTY();
+  ASSERT_FASTBINS_EMPTY();
+
+  BlockPtr bin;
+  for (size_t i = 0; i < NUM_BINS; i++) {
+    bin = BLK_PTR_IN_BIN_AT(a_head, i);
+    TEST_CHECK_(IS_LONE_SENTINEL(bin), "bin[%lu] must point to itself", i);
+  }
+}
+
+static void assert_all_arena_heads_are_null(void) {
+  TEST_ASSERT(NULL == a_head.head);
+  TEST_ASSERT(NULL == a_head.tail);
+  TEST_ASSERT(0 == ma_head.num_mmapped_regions);
+  TEST_ASSERT(0 == ma_head.total_bytes_allocated);
+}
+
+static void assert_total_number_of_blocks(const size_t num) {
+  const size_t total_blocks = _mm_total_blocks();
+  TEST_ASSERT_(total_blocks == num,
+               "total number of blocks must be %lu, got %lu instead", num,
+               total_blocks);
+}
+
+static void assert_empty_heap(void) {
+  check_main_arena_bins_are_empty();
+  assert_all_arena_heads_are_null();
+  assert_total_number_of_blocks(0);
 }
 
 static void pre_test_sanity(void) {
   LOG("\t pre_test_sanity \n");
-
-  check_all_arena_heads_are_null();
-  base_total_blocks = _mm_total_blocks();
-  base_free_blocks = _mm_free_blocks();
-  TEST_CHECK(0 == base_total_blocks);
-  TEST_CHECK(0 == base_free_blocks);
-
   check_and_reset_all_markers_unset();
 }
 
 static void post_test_sanity(void) {
   LOG("\t post_test_sanity \n");
-  check_all_arena_heads_are_null();
-  // No new permanent blocks, anything allocated during the tests are new
-  // extended blocks, they will be released at the end of each test because they
-  // will be fused
-  TEST_CHECK(_mm_total_blocks() == base_total_blocks);
-  TEST_MSG("block leak: %zu -> %zu", base_total_blocks, _mm_total_blocks());
-
-  // Free count should also match baseline
-  TEST_CHECK(_mm_free_blocks() == base_free_blocks);
-  TEST_MSG("free block mismatch: %zu -> %zu", base_free_blocks,
-           _mm_free_blocks());
+  tear_heap_down();
+  assert_empty_heap();
   check_and_reset_all_markers_unset();
 }
 
@@ -194,23 +276,11 @@ void *ensuring_malloc(size_t size) {
   return p;
 }
 
-void ensure_fuse_fwd_is_called(size_t exp) {
-  MM_ASSERT_MARKER(FUSE_FWD_CALLED, exp);
-}
-
-void ensure_fuse_bwd_is_called(size_t exp) {
-  MM_ASSERT_MARKER(FUSE_BWD_CALLED, exp);
-}
-
 void *ensuring_realloc(void *p, size_t size) {
   MM_RESET_MARKER(REALLOC_CALLED);
   void *r = REALLOC_UNDER_TESTING(p, size);
   MM_ASSERT_MARKER(REALLOC_CALLED, 1);
   return r;
-}
-
-void ensure_realloc_enough_size(void) {
-  MM_ASSERT_MARKER(REALLOC_ENOUGH_SIZE, 1);
 }
 
 static void test_align(void) {
@@ -255,6 +325,7 @@ static void test_encode(void) {
 
   ensuring_free(p);
   MM_ASSERT_MARKER(RELEASED, 1);
+  assert_empty_heap();
 }
 
 static void test_true_size(void) {
@@ -271,6 +342,7 @@ static void test_true_size(void) {
 
   ensuring_free(p);
   MM_ASSERT_MARKER(RELEASED, 1);
+  assert_empty_heap();
 }
 
 static void test_invalid_addr_outside_before_for_is_valid_addr(void) {
@@ -285,6 +357,7 @@ static void test_invalid_addr_outside_before_for_is_valid_addr(void) {
       invalid, (void *)head);
   ensuring_free(p);
   MM_ASSERT_MARKER(RELEASED, 1);
+  assert_empty_heap();
 }
 
 static void test_invalid_addr_outside_after_for_is_valid_addr(void) {
@@ -295,6 +368,7 @@ static void test_invalid_addr_outside_after_for_is_valid_addr(void) {
   TEST_ASSERT(get_block_from_main_arena(&a_head, invalid) == NULL);
   ensuring_free(p);
   MM_ASSERT_MARKER(RELEASED, 1);
+  assert_empty_heap();
 }
 
 static void test_valid_addr_for_is_valid_addr(void) {
@@ -304,6 +378,7 @@ static void test_valid_addr_for_is_valid_addr(void) {
   TEST_ASSERT(get_block_from_main_arena(&a_head, p));
   ensuring_free(p);
   MM_ASSERT_MARKER(RELEASED, 1);
+  assert_empty_heap();
 }
 
 // malloc(0) is expected to return NULL pointer
@@ -313,17 +388,24 @@ static void test_malloc_zero(void) {
   FREE_UNDER_TESTING(p);
   MM_ASSERT_MARKER(FREE_CALLED, 0);
   MM_ASSERT_MARKER(FREED, 0);
+  assert_empty_heap();
 }
 
 static void test_first_malloc_new_head(void) {
   TEST_ASSERT(a_head.head == NULL);
-  void *p = ensuring_malloc(5);
+  const size_t size = 5;
+  void *p = ensuring_malloc(size);
   MM_ASSERT_MARKER(BY_SBRKING, 1);
   TEST_ASSERT(NULL != p);
   TEST_ASSERT(NULL != a_head.head);
+  BlockPtr b = recons_blk_from_user_mem_ptr(p);
+  const size_t aligned_size = align(size);
+  TEST_ASSERT_(get_true_size(b) == aligned_size, "%lu != %lu", get_true_size(b),
+               aligned_size);
   ensuring_free(p);
   MM_ASSERT_MARKER(RELEASED, 1);
   TEST_ASSERT(NULL == a_head.head);
+  assert_empty_heap();
 }
 
 static void test_header_alignment_and_size(void) {
@@ -336,15 +418,24 @@ static void test_header_alignment_and_size(void) {
   TEST_ASSERT(get_true_size(head) == align(requested_bytes));
   ensuring_free(p);
   MM_ASSERT_MARKER(RELEASED, 1);
+  assert_empty_heap();
 }
 
 static void test_malloc_allocated_memory_aligned(void) {
-  void *p = ensuring_malloc(31);
+  const size_t size = 31;
+  void *p = ensuring_malloc(size);
   TEST_ASSERT(NULL != p);
   MM_ASSERT_MARKER(BY_SBRKING, 1);
   TEST_ASSERT(is_aligned(p));
+
+  BlockPtr b = recons_blk_from_user_mem_ptr(p);
+  const size_t aligned_size = align(size);
+  TEST_ASSERT_(get_true_size(b) == aligned_size, "%lu != %lu", get_true_size(b),
+               aligned_size);
+
   ensuring_free(p);
   MM_ASSERT_MARKER(RELEASED, 1);
+  assert_empty_heap();
 }
 
 static void test_calloc_zero_fill(void) {
@@ -354,8 +445,15 @@ static void test_calloc_zero_fill(void) {
   TEST_ASSERT(NULL != p);
   for (size_t i = 0; i < n * sz; ++i)
     TEST_ASSERT(0 == p[i]);
+
+  BlockPtr b = recons_blk_from_user_mem_ptr(p);
+  const size_t aligned_size = align(n * sz);
+  TEST_ASSERT_(get_true_size(b) == aligned_size, "%lu != %lu", get_true_size(b),
+               aligned_size);
+
   ensuring_free(p);
   MM_ASSERT_MARKER(RELEASED, 1);
+  assert_empty_heap();
 }
 
 static void test_forward_fusion_2_blocks(void) {
@@ -370,7 +468,9 @@ static void test_forward_fusion_2_blocks(void) {
 
   LOG("\tpost-malloc ===\n");
 
-  MARK_AS_FREE_BLKS_UNTIL(num_blocks - 1, ptrs);
+  MARK_AS_FREE_BLKS_UNTIL(num_blocks, ptrs);
+  BlockPtr b = recons_blk_from_user_mem_ptr(ptrs[0]);
+  mark_as_used(b);
 
   LOG("\tafter artificially freeing blocks ===\n");
 
@@ -378,21 +478,18 @@ static void test_forward_fusion_2_blocks(void) {
   BlockPtr blk = reconstruct_from_user_memory(p);
 
   fuse_fwd(blk);
-  ensure_fuse_fwd_is_called(1);
+  MM_ASSERT_MARKER(FUSE_FWD_CALLED, num_blocks - 1);
   MM_ASSERT_MARKER(FUSE_BWD_CALLED, 0);
+  ASSERT_FASTBINS_EMPTY();
+  ASSERT_UNSORTED_BIN_EMPTY();
 
   LOG("\tpost-fwd-fusion ===\n");
 
   size_t aligned_base_bytes = align(base_bytes);
-  size_t expected_size = (aligned_base_bytes * 2 + SIZE_OF_BLOCK);
+  size_t expected_size =
+      (aligned_base_bytes * num_blocks + (SIZE_OF_BLOCK * (num_blocks - 1)));
   TEST_ASSERT_(get_true_size(blk) == expected_size, "size must be %lu, got %lu",
                expected_size, get_true_size(blk));
-
-  BlockPtr last = ptrs[num_blocks - 1];
-  TEST_ASSERT_(!is_free(last), "last block should not have been freed");
-  ensuring_free(last);
-  MM_ASSERT_MARKER(RELEASED, 1);
-  MM_ASSERT_MARKER(FUSE_BWD_CALLED, 1);
 }
 
 static void test_backward_fusion_2_blocks(void) {
@@ -408,28 +505,23 @@ static void test_backward_fusion_2_blocks(void) {
   LOG("\tpost-malloc ===\n");
 
   MARK_AS_FREE_BLKS_UNTIL(num_blocks - 1, ptrs);
-
   LOG("\t after artificially freeing blocks ===\n");
 
-  void *p = ptrs[num_blocks - 2];
+  void *p = ptrs[num_blocks - 1];
   BlockPtr blk = reconstruct_from_user_memory(p);
 
+  mark_as_free(blk);
   fuse_bwd(&blk);
-  ensure_fuse_bwd_is_called(1);
   MM_ASSERT_MARKER(FUSE_FWD_CALLED, 0);
-
+  MM_ASSERT_MARKER(FUSE_BWD_CALLED, num_blocks - 1);
+  ASSERT_FASTBINS_EMPTY();
   LOG("\t post-bwd-fusion ===\n");
 
   size_t aligned_base_bytes = align(base_bytes);
   size_t expected_size =
-      (aligned_base_bytes * (num_blocks - 1) + SIZE_OF_BLOCK);
+      (aligned_base_bytes * num_blocks + SIZE_OF_BLOCK * (num_blocks - 1));
   TEST_ASSERT_(get_true_size(blk) == expected_size, "size must be %lu, got %lu",
                expected_size, get_true_size(blk));
-
-  void *last = ptrs[num_blocks - 1];
-  ensuring_free(last);
-  MM_ASSERT_MARKER(FUSE_BWD_CALLED, 1);
-  MM_ASSERT_MARKER(RELEASED, 1);
 }
 
 static void test_free_no_release_or_fusion_in_the_middle(void) {
@@ -450,22 +542,23 @@ static void test_free_no_release_or_fusion_in_the_middle(void) {
   MM_ASSERT_MARKER(FUSE_FWD_CALLED, 0);
   MM_ASSERT_MARKER(FUSE_BWD_CALLED, 0);
   MM_ASSERT_MARKER(RELEASED, 0);
-  if (CAN_BE_FAST_BINNED(align(base_bytes))) {
-    MM_ASSERT_MARKER(PUT_IN_FASTBIN, 1);
-  } else {
-    MM_ASSERT_MARKER(PUT_IN_UNSORTED_BIN, 1);
-  }
+  MM_ASSERT_MARKER(PUT_IN_FASTBIN, 1);
 
   LOG("\tpost-free ===\n");
 
   BlockPtr blk = recons_blk_from_user_mem_ptr(p);
-  TEST_ASSERT(is_free(blk));
+  // Because it is in fast bin.
+  TEST_ASSERT(!is_free(blk));
+  const size_t f_idx = GET_FAST_BIN_IDX(get_true_size(blk));
 
   FREE_BLKS_EXCEPT(num_blocks, ptrs, (size_t)1);
-  // Each block will be put in the fast bin.
-  MM_ASSERT_MARKER(FUSE_BWD_CALLED, num_blocks - 1);
-  MM_ASSERT_MARKER(PUT_IN_FASTBIN, 3);
+  ASSERT_UNSORTED_BIN_EMPTY();
+  // Each block will be put in the fast bin except the last one.
+  MM_ASSERT_MARKER(FUSE_BWD_CALLED, 0);
+  MM_ASSERT_MARKER(PUT_IN_FASTBIN, num_blocks - 2);
   MM_ASSERT_MARKER(RELEASED, 1);
+
+  ASSERT_FASTBIN_HAS(f_idx, num_blocks - 2);
 }
 
 static void test_free_no_release_or_fusion_when_neighbors_are_free(void) {
@@ -491,8 +584,8 @@ static void test_free_no_release_or_fusion_when_neighbors_are_free(void) {
   TEST_ASSERT_(!is_free(blk), "block to free should not have been free");
   // It will directly put in the fast bin even though the neighbors are free.
   ensuring_free(p);
-  ensure_fuse_fwd_is_called(0);
-  ensure_fuse_bwd_is_called(0);
+  MM_ASSERT_MARKER(FUSE_FWD_CALLED, 0);
+  MM_ASSERT_MARKER(FUSE_BWD_CALLED, 0);
   MM_ASSERT_MARKER(PUT_IN_FASTBIN, 1);
   LOG("\tpost-free middle ===\n");
 
@@ -501,7 +594,7 @@ static void test_free_no_release_or_fusion_when_neighbors_are_free(void) {
   TEST_ASSERT_(!is_free(last_blk), "last block must not be free");
   TEST_ASSERT_(is_prev_free(last_blk), "last block's prev must be free");
   ensuring_free(last);
-  MM_ASSERT_MARKER(FUSE_BWD_CALLED, num_blocks - 1);
+  MM_ASSERT_MARKER(FUSE_BWD_CALLED, 1);
   MM_ASSERT_MARKER(RELEASED, 1);
 }
 
@@ -529,6 +622,8 @@ static void test_copy_block(void) {
   BlockPtr p_blk = reconstruct_from_user_memory(p);
   BlockPtr q_blk = reconstruct_from_user_memory(q);
 
+  TEST_ASSERT(get_true_size(p_blk) == get_true_size(q_blk));
+
   deep_copy_user_memory(p_blk, q_blk);
   LOG("\tafter deep copy block ===\n");
 
@@ -536,11 +631,13 @@ static void test_copy_block(void) {
   for (size_t i = 0; i < min; i++)
     TEST_ASSERT_(p[i] == q[i], "%d != %d", p[i], q[i]);
 
+  TEST_ASSERT(CAN_BE_FAST_BINNED(get_true_size(p_blk)));
   ensuring_free(p);
   MM_ASSERT_MARKER(PUT_IN_FASTBIN, 1);
   ensuring_free(q);
-  MM_ASSERT_MARKER(FUSE_BWD_CALLED, 1);
+  MM_ASSERT_MARKER(FUSE_BWD_CALLED, 0);
   MM_ASSERT_MARKER(RELEASED, 1);
+  TEST_ASSERT(a_head.head == a_head.tail);
 }
 
 static void test_realloc_grow_and_shrink(void) {
@@ -570,7 +667,7 @@ static void test_realloc_grow_and_shrink(void) {
 
   const size_t re_shrink_n = 5;
   char *r = (char *)ensuring_realloc(q, re_shrink_n);
-  ensure_realloc_enough_size();
+  MM_ASSERT_MARKER(REALLOC_ENOUGH_SIZE, 1);
   MM_ASSERT_MARKER(MALLOC_CALLED, 0);
   MM_ASSERT_MARKER(FREE_CALLED, 0);
   // Small enough to be put in the fast bin.
@@ -585,14 +682,6 @@ static void test_realloc_grow_and_shrink(void) {
   MM_ASSERT_MARKER(FUSE_BWD_CALLED, 0);
   MM_ASSERT_MARKER(RELEASED, 0);
   MM_ASSERT_MARKER(PUT_IN_FASTBIN, 1);
-  // this should free the whole thing, since it will fuse bk and fw
-  BlockPtr tail = a_head.tail;
-  // We avoid double free check by artificially marking the chunk free.
-  mark_as_used(tail);
-  ensuring_free(allocated_memory(tail));
-  MM_ASSERT_MARKER(FUSE_FWD_CALLED, 0);
-  MM_ASSERT_MARKER(FUSE_BWD_CALLED, 2);
-  MM_ASSERT_MARKER(RELEASED, 1);
 }
 
 static void test_realloc_with_size_zero(void) {
@@ -674,6 +763,16 @@ static void test_bin_repositioning_trick(void) {
   for (size_t i = 0; i < NUM_BINS; i++) {
     bin = BLK_PTR_IN_BIN_AT(a_head, i);
     TEST_ASSERT_(IS_LONE_SENTINEL(bin), "bin[%lu] must point to itself", i);
+  }
+}
+
+static void test_fast_bin(void) {
+  for (size_t i = 0; i < NUM_FAST_BINS; i++) {
+    TEST_ASSERT_(NULL == a_head.fastbins[i], "fast bin must be null");
+    const size_t size = FAST_BIN_SIZE_START + FAST_BIN_STEP * i;
+    const size_t f_idx = GET_FAST_BIN_IDX(size);
+    TEST_ASSERT_(1 == CAN_BE_FAST_BINNED(size), "must be fastbinned");
+    TEST_ASSERT_(f_idx == i, "fast bin index for %lu != %lu", f_idx, i);
   }
 }
 
@@ -850,12 +949,12 @@ static void test_best_find_fast_bin(void) {
   // Artificially put it in the appropriate fast-bin
   BlockPtr to_fast_bin = recons_blk_from_user_mem_ptr(put_in_fast_bin);
   const size_t idx = GET_FAST_BIN_IDX(get_true_size(to_fast_bin));
-  mark_as_free(to_fast_bin);
   TEST_ASSERT_(NULL == a_head.fastbins[idx],
                "fastbin[%lu] should have been NULL, got %p", idx,
                (void *)a_head.fastbins[idx]);
 
-  a_head.fastbins[idx] = to_fast_bin;
+  insert_in_fastbin(to_fast_bin);
+  MM_ASSERT_MARKER(PUT_IN_FASTBIN, 1);
 
   void *fast_binned = ensuring_malloc(n);
   TEST_ASSERT(fast_binned);
@@ -916,24 +1015,27 @@ static void test_best_find_bin(void) {
   MM_ASSERT_MARKER(RELEASED, 1);
 }
 
+#define PUT_ONE_BLOCK_INTO_EACH_FASTBIN(ptrs)                                  \
+  {                                                                            \
+    for (size_t i = 0; i < NUM_FAST_BINS; i++) {                               \
+      const size_t size = FAST_BIN_SIZE_START + i * FAST_BIN_STEP;             \
+      void *p = ensuring_malloc(size);                                         \
+      TEST_ASSERT(p);                                                          \
+      MM_ASSERT_MARKER(BY_SBRKING, 1);                                         \
+      ptrs[i] = p;                                                             \
+    }                                                                          \
+    for (size_t i = 0; i < NUM_FAST_BINS; i++) {                               \
+      void *p = ptrs[i];                                                       \
+      BlockPtr blk = recons_blk_from_user_mem_ptr(p);                          \
+      insert_in_fastbin(blk);                                                  \
+      MM_ASSERT_MARKER(PUT_IN_FASTBIN, 1);                                     \
+    }                                                                          \
+  }
+
 static void test_consolidate_fastbins(void) {
   // Put one block into each fastbin
   void *ptrs[NUM_FAST_BINS];
-  for (size_t i = 0; i < NUM_FAST_BINS; i++) {
-    const size_t size = FAST_BIN_SIZE_START + i * FAST_BIN_STEP;
-    void *p = ensuring_malloc(size);
-    TEST_ASSERT(p);
-    MM_ASSERT_MARKER(BY_SBRKING, 1);
-    ptrs[i] = p;
-  }
-
-  for (size_t i = 0; i < NUM_FAST_BINS; i++) {
-    void *p = ptrs[i];
-    BlockPtr blk = recons_blk_from_user_mem_ptr(p);
-    mark_as_free(blk);
-    a_head.fastbins[i] = blk;
-    TEST_ASSERT(is_free(blk));
-  }
+  PUT_ONE_BLOCK_INTO_EACH_FASTBIN(ptrs);
 
   // Ensure unsorted bin is empty
   BlockPtr unsorted_bin_sentinel = BLK_PTR_OF_UNSORTED(a_head);
@@ -945,23 +1047,36 @@ static void test_consolidate_fastbins(void) {
   TEST_ASSERT_(0 == READ_BINMAP(a_head, 0),
                "bin map for unsorted bin should be 0");
 
-  // Since all other bins are free and contiguous to each other,
-  // the first block consolidating will fuse with others at once,
-  // and remove all other from their fastbins.
+  // Since all bins are in a fast bin and contiguous to each other,
+  // each block consolidating will fuse with the one before which has been put
+  // to the unsorted bin, either solely (first one), or fused with the ones
+  // before it (as this case).
   consolidate_fastbins();
-  MM_ASSERT_MARKER(FUSE_FWD_CALLED, NUM_FAST_BINS - 1);
-  MM_ASSERT_MARKER(CONSOLIDATED, 1);
-  MM_ASSERT_MARKER(PUT_IN_UNSORTED_BIN, 1);
+  MM_ASSERT_MARKER(FUSE_FWD_CALLED, 0);
+  MM_ASSERT_MARKER(FUSE_BWD_CALLED, NUM_FAST_BINS - 1);
+  MM_ASSERT_MARKER(CONSOLIDATED, NUM_FAST_BINS);
+  MM_ASSERT_MARKER(PUT_IN_UNSORTED_BIN, NUM_FAST_BINS);
+  ASSERT_FASTBINS_EMPTY();
 
-  for (size_t i = 0; i < NUM_FAST_BINS; i += 1) {
-    TEST_ASSERT_(NULL == a_head.fastbins[i], "fastbin[%lu] is not empty", i);
+  TEST_ASSERT_(!IS_LONE_SENTINEL(unsorted_bin_sentinel),
+               "unsorted bin should not be empty");
+
+  size_t counter = 0;
+  BlockPtr cursor = unsorted_bin_sentinel->next;
+  while (cursor != unsorted_bin_sentinel) {
+    if (cursor->next == cursor) {
+      printf("cursor points to itself %p", (void *)cursor);
+      break;
+    }
+    counter++;
+    cursor = cursor->next;
   }
 
   // There will only be one block with all others merged.
-  TEST_ASSERT_((unsorted_bin_sentinel->next->next == unsorted_bin_sentinel),
-               "only single block should be prepended to the unsorted bin, the "
-               "second block :%p",
-               (void *)unsorted_bin_sentinel->next->next);
+  TEST_ASSERT_(1 == counter,
+               "only single block should be prepended to the unsorted bin, but"
+               " got %lu blocks",
+               counter);
 
   BlockPtr consolidated = unsorted_bin_sentinel->next;
   const size_t exp_consolidated_size =
@@ -975,9 +1090,42 @@ static void test_consolidate_fastbins(void) {
   mark_as_used(consolidated);
   // If it is used, it should not be in unsorted bin
   remove_from_linkedlist(consolidated);
-
   ensuring_free(allocated_memory(consolidated));
   MM_ASSERT_MARKER(RELEASED, 1);
+}
+
+static void test_search_in_unsorted_consolidating(void) {
+  // Put one block into each fastbin
+  void *ptrs[NUM_FAST_BINS];
+  PUT_ONE_BLOCK_INTO_EACH_FASTBIN(ptrs);
+
+  // Ensure unsorted bin is empty
+  BlockPtr unsorted_bin_sentinel = BLK_PTR_OF_UNSORTED(a_head);
+  TEST_ASSERT_(
+      IS_LONE_SENTINEL(unsorted_bin_sentinel),
+      "unsorted bin sentinal should be pointing to itself got next:%p, prev:%p",
+      (void *)unsorted_bin_sentinel->next, (void *)unsorted_bin_sentinel->prev);
+
+  TEST_ASSERT_(0 == READ_BINMAP(a_head, 0),
+               "bin map for unsorted bin should be 0");
+
+  const size_t size_all_fast_bins_combined =
+      (FAST_BIN_SIZE_CAP + FAST_BIN_SIZE_START) * (NUM_FAST_BINS) / 2 +
+      (SIZE_OF_BLOCK * (NUM_FAST_BINS - 1));
+
+  // It will have to consolidate all fast bins, and then start search in
+  // unsorted bins while fusing and placing in appropriate bins.
+  void *all_combined = ensuring_malloc(size_all_fast_bins_combined);
+  TEST_ASSERT(all_combined);
+  MM_ASSERT_MARKER(FUSE_FWD_CALLED, 0);
+  MM_ASSERT_MARKER(FUSE_BWD_CALLED, NUM_FAST_BINS - 1);
+  MM_ASSERT_MARKER(CONSOLIDATED, NUM_FAST_BINS);
+  MM_ASSERT_MARKER(PUT_IN_UNSORTED_BIN, NUM_FAST_BINS);
+  MM_ASSERT_MARKER(UNSORTED_BINNED, 1);
+
+  ASSERT_FASTBINS_EMPTY();
+  TEST_ASSERT_(IS_LONE_SENTINEL(unsorted_bin_sentinel),
+               "unsorted bin should be empty");
 }
 
 static void test_first_find_unsorted_bin(void) {
@@ -1024,6 +1172,65 @@ static void test_first_find_unsorted_bin(void) {
   MM_ASSERT_MARKER(RELEASED, 1);
 }
 
+extern void print_bin(ArenaPtr ar, const size_t ix);
+
+static void test_full_flow_consolidation_and_free(void) {
+  LOG("=== %s: start ===\n", __func__);
+  void *ptrs[NUM_FAST_BINS];
+  PUT_ONE_BLOCK_INTO_EACH_FASTBIN(ptrs);
+
+  ASSERT_UNSORTED_BIN_EMPTY();
+  for (size_t f_idx = 0; f_idx < NUM_FAST_BINS; f_idx++) {
+    ASSERT_FASTBIN_HAS(f_idx, (size_t)1);
+  }
+
+  void *from_first_fast_bin = ensuring_malloc(FAST_BIN_SIZE_START);
+  TEST_ASSERT(from_first_fast_bin);
+  MM_ASSERT_MARKER(FASTBINNED, 1);
+
+  const size_t f_idx = 0;
+  ASSERT_FASTBIN_HAS(f_idx, (size_t)0);
+
+  // We will try to grow in place but won't be able to because all neighbors are
+  // in fastbins. We will free from_first_fast_bin and pick the block from the
+  // second fast bin.
+  void *new_realloced = ensuring_realloc(from_first_fast_bin,
+                                         FAST_BIN_SIZE_START + FAST_BIN_STEP);
+  TEST_ASSERT(new_realloced);
+  // from_first_fast_bin should be put back to its fastbin
+  MM_ASSERT_MARKER(FREE_CALLED, 1);
+  MM_ASSERT_MARKER(FREED, 1);
+  MM_ASSERT_MARKER(PUT_IN_FASTBIN, 1);
+  ASSERT_FASTBIN_HAS(f_idx, (size_t)1);
+  ASSERT_FASTBIN_HAS(f_idx + 1, (size_t)0);
+
+  // The size requires malloc to pick a block from the second fast bin.
+  MM_ASSERT_MARKER(FASTBINNED, 1);
+
+  const size_t size_all_fast_bins_combined =
+      (FAST_BIN_SIZE_CAP + FAST_BIN_SIZE_START) * (NUM_FAST_BINS) / 2 +
+      (SIZE_OF_BLOCK * (NUM_FAST_BINS - 1));
+
+  void *all_fast_bins_combined = ensuring_malloc(size_all_fast_bins_combined);
+  TEST_ASSERT(all_fast_bins_combined);
+  // new_realloced is in use thus -1.
+  MM_ASSERT_MARKER(CONSOLIDATED, NUM_FAST_BINS - 1);
+  MM_ASSERT_MARKER(BY_SBRKING, 1);
+
+  BlockPtr blk = recons_blk_from_user_mem_ptr(all_fast_bins_combined);
+
+  ASSERT_FASTBINS_EMPTY();
+
+  TEST_ASSERT_(size_all_fast_bins_combined == get_true_size(blk), "%lu != %lu",
+               size_all_fast_bins_combined, get_true_size(blk));
+  TEST_ASSERT(a_head.tail == blk);
+
+  // Should fuse everything in unsorted bins together
+  ensuring_free(all_fast_bins_combined);
+  ASSERT_UNSORTED_BIN_EMPTY();
+  MM_ASSERT_MARKER(RELEASED, 1);
+}
+
 TEST_LIST = {
     {"test_align", test_align},
     {"test_true_size", test_true_size},
@@ -1052,6 +1259,7 @@ TEST_LIST = {
     {"test_bin_macros", test_bin_macros},
     {"test_mark_unmark_binmap", test_mark_unmark_binmap},
     {"test_bin_repositioning_trick", test_bin_repositioning_trick},
+    {"test_fast_bin", test_fast_bin},
     {"test_mremap", test_mremap},
     {"test_realloc_from_main_to_mmapped", test_realloc_from_main_to_mmapped},
     {"test_realloc_from_mmapped_to_main", test_realloc_from_mmapped_to_main},
@@ -1060,5 +1268,9 @@ TEST_LIST = {
     {"test_best_find_bin", test_best_find_bin},
     {"test_consolidate_fastbins", test_consolidate_fastbins},
     {"test_first_find_unsorted_bin", test_first_find_unsorted_bin},
+    {"test_search_in_unsorted_consolidating",
+     test_search_in_unsorted_consolidating},
+    {"test_full_flow_consolidation_and_free",
+     test_full_flow_consolidation_and_free},
     {NULL, NULL}};
 #endif

@@ -26,7 +26,8 @@
 #define SMALL_BINNED 23
 #define LARGE_BINNED 24
 #define UNSORTED_BINNED 25
-#define END_MARKERS 26
+#define FREE_ON_BAD_PTR 26
+#define END_MARKERS 27
 
 #ifdef TESTING
 #include <internal.h>

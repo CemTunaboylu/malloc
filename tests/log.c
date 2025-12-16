@@ -40,7 +40,7 @@ void logf_nonalloc(const char *fmt, ...) {
   debug_write_str_fd(global_test_log_fd, buf);
 }
 
-static inline void print_blk(const int fd, const BlockPtr b) {
+void print_blk(const int fd, const BlockPtr b) {
   debug_write_str_fd(fd, "[ size:");
   debug_write_u64_fd(fd, get_true_size(b));
   debug_write_str_fd(fd, " - free:");
@@ -52,10 +52,43 @@ static inline void print_blk(const int fd, const BlockPtr b) {
   debug_write_str_fd(fd, "]\n");
 }
 
-static inline void print_arrow(const int fd) {
+void print_blk_to_stderr(const BlockPtr b) {
+  const int fd = fileno(stderr);
+  print_blk(fd, b);
+}
+
+void print_arrow(const int fd) {
   debug_write_str_fd(fd, "                |\n");
   debug_write_str_fd(fd, "                |\n");
   debug_write_str_fd(fd, "                v\n");
+}
+
+void print_arrow_to_stderr(void) {
+  const int fd = fileno(stderr);
+  print_arrow(fd);
+}
+
+void print_unsorted_bins_to_fd(const int fd) {
+  BlockPtr head = BLK_PTR_OF_UNSORTED(a_head);
+
+  debug_write_str_fd(fd, "--- Unsorted bin print ---\n");
+  if (IS_LONE_SENTINEL(head)) {
+    debug_write_str_fd(fd, "Unsorted bin is empty\n");
+    return;
+  }
+
+  print_blk(fd, head);
+
+  for (BlockPtr b = head->next; b && head != b; b = b->next) {
+    print_arrow(fd);
+    print_blk(fd, b);
+  }
+  debug_write_str_fd(fd, "--- Unsorted bin print end ---\n");
+}
+
+void print_unsorted_bins(void) {
+  const int fd = fileno(stderr);
+  print_unsorted_bins_to_fd(fd);
 }
 
 void print_list_into_fd(const int fd) {

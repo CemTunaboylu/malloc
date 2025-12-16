@@ -94,7 +94,7 @@ extern const size_t MAX_ALIGNMENT;
 #define GET_FAST_BIN_IDX(aligned_req_size)                                     \
   (aligned_req_size / FAST_BIN_STEP - 1)
 
-#define MOVE_FAST_BIN_TO_NEXT(a, ix)                                           \
+#define MOVE_FAST_BIN_TO_NEXT(a, idx)                                          \
   {                                                                            \
     a.fastbins[idx] = a.fastbins[idx]->next;                                   \
   }
@@ -130,8 +130,10 @@ struct Arena {
   // read means a definite empty, 1 on the other hand does not guarantee a
   // populated bin.
   MAP_ELMNT_TYPE binmap[NUM_ELMNTS_NECESSARY_TO_MAP];
-  // range of [FAST_BIN_SIZE_START : FAST_BIN_SIZE_CAP : ALIGNMENT] bytes,
-  // no 2 contiguous chunks are fusied.
+  // range of [FAST_BIN_SIZE_START : FAST_BIN_SIZE_CAP : ALIGNMENT] bytes.
+  // Fastbins are not meant to be fused with other chunks, except they are
+  // being consolidated on purpose. Thus, we keep those chunks as 'used' to
+  // avoid pre-mature fusion.
   BlockPtr fastbins[NUM_FAST_BINS];
   size_t total_bytes_allocated;
 };
@@ -144,6 +146,10 @@ struct MMapArena {
 BlockPtr get_block_from_main_arena(const ArenaPtr, void *);
 BlockPtr get_block_from_mmapped_arena(const MMapArenaPtr, void *);
 void allocated_bytes_update(size_t *, const int);
+#ifdef TESTING
+size_t num_blocks_in_unsorted_bin(const ArenaPtr);
+void print_bin(ArenaPtr, const size_t);
+#endif
 
 extern void debug_write_str(const char *);
 extern void debug_write_ptr(const void *);
