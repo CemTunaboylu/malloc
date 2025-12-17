@@ -62,7 +62,7 @@ LOG_OBJ := $(TST_DIR)/log.o
 $(LOG_OBJ): $(TEST_DIR)/log.c | $(TST_DIR)
 	$(CC) $(CFLAGS) -c $< -o $@
 
-.PHONY: all clean test dirs test-container investigation-container
+.PHONY: all clean test dirs test-container investigation-container preload-lib try-preload
 
 all: dirs $(LIB) $(TESTS)
 
@@ -119,12 +119,3 @@ clean:
 	$(RM) -r $(BLD_DIR)
 	docker rmi -f $(IMAGE) >/dev/null 2>&1 || true; 
 	docker rmi -f malloc-investigation >/dev/null 2>&1 || true; 
-
-LOGS := $(wildcard investigation_logs/*.log)
-HTML := $(LOGS:.log=.html)
-
-logs-html: $(HTML)
-
-# Note: assumes ansi-to-html is installed and in $PATH (e.g. npm install -g ansi-to-html or system package).
-%.html: %.log
-	ansi-to-html $< > $@
