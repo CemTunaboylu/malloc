@@ -895,26 +895,26 @@ static void test_realloc_from_mmapped_to_main(void) {
 static void test_bare_bin_index(void) {
   for (size_t ix = 0; ix < NUM_SMALL_BINS; ix++) {
     const size_t real = SMALL_BIN_SIZE_START + (ix * SMALL_BIN_STEP);
-    const size_t bare_bin_idx = GET_BARE_BIN_IDX(real);
+    const size_t bare_bin_idx = get_bare_bin_idx(real);
     const size_t exp = ix + 1;
     TEST_ASSERT_(bare_bin_idx == exp, "[small bin] idx: %lu != %lu",
                  bare_bin_idx, exp);
   }
 
-  TEST_ASSERT_(GET_BARE_BIN_IDX(SMALL_BIN_SIZE_CAP + ALIGNMENT) ==
+  TEST_ASSERT_(get_bare_bin_idx(SMALL_BIN_SIZE_CAP + ALIGNMENT) ==
                    LARGE_BIN_IDX_SHIFT(0),
                "large bin first size fails %lu != %lu",
-               GET_BARE_BIN_IDX(SMALL_BIN_SIZE_CAP + ALIGNMENT),
+               get_bare_bin_idx(SMALL_BIN_SIZE_CAP + ALIGNMENT),
                LARGE_BIN_IDX_SHIFT(0));
-  TEST_ASSERT_(GET_BARE_BIN_IDX(LARGE_BIN_SIZE_START + LARGE_BIN_STEP -
+  TEST_ASSERT_(get_bare_bin_idx(LARGE_BIN_SIZE_START + LARGE_BIN_STEP -
                                 ALIGNMENT) == LARGE_BIN_IDX_SHIFT(0),
                "large bin first size fails, %lu != %lu",
-               GET_BARE_BIN_IDX(LARGE_BIN_SIZE_START - ALIGNMENT),
+               get_bare_bin_idx(LARGE_BIN_SIZE_START - ALIGNMENT),
                LARGE_BIN_IDX_SHIFT(0));
 
   for (size_t ix = 1; ix <= NUM_LARGE_BINS; ix++) {
     const size_t real = LARGE_BIN_SIZE_START + ix * LARGE_BIN_STEP;
-    const size_t bare_bin_idx = GET_BARE_BIN_IDX(real);
+    const size_t bare_bin_idx = get_bare_bin_idx(real);
     const size_t exp = LARGE_BIN_IDX_SHIFT(ix);
     TEST_ASSERT_(bare_bin_idx == exp, "[large bin] idx: %lu != %lu",
                  bare_bin_idx, exp);
@@ -982,7 +982,7 @@ static void test_best_find_bin(void) {
 
   // Artificially put it in the appropriate bin
   BlockPtr to_bin = recons_blk_from_user_mem_ptr(put_in_bin);
-  const size_t bare_idx = GET_BARE_BIN_IDX(get_true_size(to_bin));
+  const size_t bare_idx = get_bare_bin_idx(get_true_size(to_bin));
   TEST_ASSERT_(1 == bare_idx, "bare_idx %lu should have been 1", bare_idx);
 
   BlockPtr bin_sentinel = BLK_PTR_IN_BIN_AT(a_head, bare_idx);
@@ -1140,7 +1140,7 @@ static void test_first_find_unsorted_bin(void) {
   LOG("\tpost-malloc with size %lu and setting values for data ===\n", n);
   // Artificially put it in the appropriate bin
   BlockPtr to_bin = recons_blk_from_user_mem_ptr(put_in_bin);
-  const size_t bare_idx = GET_BARE_BIN_IDX(get_true_size(to_bin));
+  const size_t bare_idx = get_bare_bin_idx(get_true_size(to_bin));
   TEST_ASSERT_(1 == bare_idx, "bare_idx %lu should have been 1", bare_idx);
 
   BlockPtr unsorted_sentinel = BLK_PTR_OF_UNSORTED(a_head);

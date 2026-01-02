@@ -26,6 +26,12 @@ int can_be_fast_binned(const size_t aligned_req_size) {
          (aligned_req_size <= FAST_BIN_SIZE_CAP);
 }
 
+size_t get_bare_bin_idx(const size_t aligned_req_size) {
+  return (aligned_req_size <= SMALL_BIN_SIZE_CAP
+              ? (aligned_req_size / SMALL_BIN_STEP)
+              : LARGE_BIN_IDX_SHIFT(GET_LARGE_BIN_IDX(aligned_req_size)));
+}
+
 size_t get_fast_bin_idx(const size_t aligned_req_size) {
   return (aligned_req_size / FAST_BIN_STEP - 1);
 }

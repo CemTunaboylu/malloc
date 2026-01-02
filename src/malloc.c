@@ -348,7 +348,7 @@ static inline
       return blk;
     }
     const size_t true_size = get_true_size(blk);
-    const size_t bin_idx = GET_BARE_BIN_IDX(true_size);
+    const size_t bin_idx = get_bare_bin_idx(true_size);
     BlockPtr blk_to_append_after = BLK_PTR_IN_BIN_AT(a_head, bin_idx);
 
     if (!IS_SMALL(true_size)) {
@@ -370,7 +370,7 @@ static inline
 }
 
 static inline BlockPtr find_in_small_bin(const size_t aligned_size) {
-  size_t bare_idx = GET_BARE_BIN_IDX(aligned_size);
+  size_t bare_idx = get_bare_bin_idx(aligned_size);
   // Check if the exact sized bin has a chunk from bitmap.
   if (READ_BINMAP(a_head, bare_idx) == 0)
     return NULL;
@@ -388,7 +388,7 @@ static inline BlockPtr find_in_small_bin(const size_t aligned_size) {
 }
 
 static inline BlockPtr find_in_large_bin(const size_t aligned_size) {
-  size_t bare_idx = GET_BARE_BIN_IDX(aligned_size);
+  size_t bare_idx = get_bare_bin_idx(aligned_size);
   // The bin has an element
   if (READ_BINMAP(a_head, bare_idx) == 0)
     return NULL;
