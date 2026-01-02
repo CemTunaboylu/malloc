@@ -43,6 +43,28 @@ and many design choices mirror glibc behavior
 
 ## High-Level Design
 
+### Glossary 
+
+**Chunk:** 'chunk' of memory requested by the user, often implying it is contiguous. I explicitly separate a memory chunk requested and the block it is in. The chunk refers to the contiguous part of memory that the user will start using immediately. It is the allocation from his/her point of view.
+**Block:** The enveloping structure of the 'chunk' of memory requested by the user, where the chunk tails the block itself. Block is the header as the handle to the allocated memory in its entirety. During allocation, it is carved out from the available memory by requesting a little more than user's desired size so that the header fits.  
+
+```md
++-----------------------------+
+| flagged size                |  │ 											│
+| next                        |  ├── Block's header 		│
+| prev                        |  │											│
++-----------------------------+ 												├──  Block
+|  user memory                |  │ 									  	│
+|  of aligned                 |  ├── Chunk 					  	│
+|  requested size             |  │ 									    │
++-----------------------------+
+```
+
+**Note:** Allocator often finds or searches blocks according to the metadata encoded in their headers and when found or allocated newly, returns the chunk. User is not aware of the block structure and the header, although he/she can reconstruct it if he/she looks at the implementation.
+
+**Arena:** The data structure that holds blocks and other occasional additional metadata about the heaps state. 
+**Bin:** An array that holds blocks of specific size or range of specific size.
+
 ### Arenas
 
 The allocator maintains a primary arena which owns:
@@ -54,7 +76,7 @@ The allocator maintains a primary arena which owns:
 There is no multi-arena or per-thread arena support. Just an additional arena for
 mmapped memory chunks.
 
-### Chunk / Block Layout
+### Block Layout
 
 Each block in the heap has the following layout:
 
@@ -65,7 +87,7 @@ Each block in the heap has the following layout:
 | next                        |  ← pointer to next block if free and in any bin
 | prev                        |  ← pointer to previous block if free and in any bin
 +-----------------------------+
-|                             |  ← user memory of aligned requested size
+|                             |  ← user memory of aligned requested size also refered as memory chunk
 |                             |
 |                             |
 | true size                   |  ← size (flags removed) i.e. true size if block is free
@@ -74,8 +96,8 @@ Each block in the heap has the following layout:
 
 Each allocation is represented by a Block:
 
-- Header contains size and flags
-- User memory immediately follows the header
+- Header contains size and flags.
+- User memory immediately follows the header, also refered as memory chunk.
 - When a block is free, its size is also written to its footer so that next contiguous header can easily retrieve it when coalescing/fusing.
 
 This enables:
@@ -86,9 +108,9 @@ This enables:
 
 Flags & Metadata
 
-- Allocation state is encoded using low bits in the size field (alignment requirements spare 3-4 least significand bits)
-- `prev_free` is propagated eagerly/lazily depending on context
-- Fastbin chunks are treated as “in use” to avoid premature fusion until they are consolidated
+- Allocation state is encoded using low bits in the size field (alignment requirements spare 3-4 least significand bits).
+- `prev_free` is propagated eagerly/lazily depending on context.
+- Fastbin chunks are treated as “in use” to avoid premature fusion until they are consolidated.
 
 ## Allocation Strategy
 
@@ -98,19 +120,19 @@ Given the requested size `size`:
 
 1. Align the size.
 2. If aligned size is larger than `MIN_CAP_FOR_MMAP` (128 KiB), mmap.
-3. Else if arena does not have any allocated chunks, allocate aligned size with sbrk.
+3. Else if arena does not have any blocks, allocate aligned size with sbrk.
 4. Else
 	1. If aligned size is small/eligible for fast bins.
 		1. Try fast bin, if found return that block.
-		2. If no chunk is found in fastbins, try small bins (check small bin for exact size), if found return that chunk.
-		3. If no chunk is found in that small bin, do not go to next larger small bin (glibc does the same), try unsorted bin, if a chunk as big as (split before returning) or larger than aligned size is found, return that.
-		4. If still no chunk found, consolidate fastbins (fuse them and put them to unsorted bin).
+		2. If no block is found in fastbins, try small bins (check small bin for exact size), if found return that chunk.
+		3. If no block is found in that small bin, do not go to next larger small bin (glibc does the same), try unsorted bin, if a block as big as (split before returning) or larger than aligned size is found, return that chunk.
+		4. If still no block found, consolidate fastbins (fuse them and put them to unsorted bin).
 		5. Try unsorted again as above step.
-		6. If still no chunk is found, request new chunk via sbrk from OS i.e. sysmalloc.
+		6. If still no block is found, request new memory for the block via sbrk from OS i.e. sysmalloc.
 	2. If aligned size is large.
 		1. Consolidate fast bins.
-		2. Try unsorted bins and fuse as you go to satisfy the required aligned size, if found return that. If the found one is large enouhg, split first.
-		3. If not found, try the large bin with the appropriate range of sizes, if found split if necessary and return.
+		2. Try unsorted bins and fuse as you go to satisfy the required aligned size, if found return that chunk. If the found one is large enough, split first.
+		3. If not found, try the large bin with the appropriate range of sizes, if found split the block if necessary and return the chunk.
 
 🔑 The unsorted bin searches mentioned above fuses blocks at hand if possible and if it does not satisfy the requirement,
 it is put in the appropriate bin (either a small or large bin).
@@ -125,13 +147,13 @@ it is put in the appropriate bin (either a small or large bin).
 
 - Fastbins are periodically consolidated into the unsorted bin
 - During consolidation:
-	- Chunks are moved one-by-one
+	- Blocks are moved one-by-one
 	- Full forward and backward coalescing is performed
 	- Bin bitmaps are updated lazily (mirroring glibc behavior)
 
 ### Large Allocations
 
-- Requests above MIN_CAP_FOR_MMAP are fulfilled via mmap
+- Requests above `MIN_CAP_FOR_MMAP` are fulfilled via mmap
 - Large reallocations may transition between sbrk and mmap
 
 ### Reallocation
@@ -155,17 +177,17 @@ If in-place growth is not possible:
 1. Check for edge cases
 	1. If given pointer is null, malloc the given size
 	2. If given size is 0, free the pointer
-	3. If cannot reconstruct header from the given memory chunk, return NULL
-	3. If the given size and the blocks size is equal, do nothing and return the given pointer
+	3. If cannot reconstruct block header from the given memory chunk, return NULL
+	3. If the given size and the blocks size (size of the chunk, header size is not included) is equal, do nothing and return the given pointer
 2. Switch over 4 possibilities given above
 	1. SBRK → SBRK 
 		1. Try growing in place by fusing with forward blocks until enough size is obtained (larger is fine, split before returning )
 		2. If cannot still satisfy the requirement: perform malloc new, deep-copy, free old routine
-		3. If satisfies split if too large, and return (no mem move needed)
+		3. If satisfies split if too large, and return chunk (no mem move needed)
 	2. SBRK → MMAP
-		1. perform malloc new (mmap), deep-copy, free sbrk (release occurs only if the block is the top block i.e. tangent to the heap's BRK) chunk routine
+		1. perform malloc new (mmap), deep-copy, free sbrk (release occurs only if the block is the top block i.e. tangent to the heap's BRK) block routine
 	3. MMAP → SBRK
-		1. perform malloc new (sbrk), deep-copy, free (munmap) chunk routine
+		1. perform malloc new (sbrk), deep-copy, free (munmap) block routine
 	4.  MMAP → MMAP (via mremap)
 		1. mremap (handles deep-copy and freeing itself)
 
@@ -178,13 +200,13 @@ Any error during the syscalls fails and halts the given allocation attempt.
 1. Handle edge cases
 	1. If given pointer is null, do nothing silently return
 	2. If cannot reconstruct the header, do nothing silently return (in tests, `FREE_ON_BAD_PTR` is marked )
-	3. If alraedy free (double free), print a message (during testing `DOUBLE_FREE` is marked) and do nothing.
+	3. If already free (double free), print a message (during testing `DOUBLE_FREE` is marked and fails tests if not checked and cleared) and do nothing.
 2. Mark the block as free and propagate the information via putting the true size in footer and setting the next blocks bit flag if not the top block
 3. If mmapped, munmap
-4. If not the top chunk and is eligible for fast bins (size fits), insert the block in appropriate fast bin and return. 
-4. If the top chunk or large, fuse with contiguous chunks
-5. If not the top chunk, insert the block in unsorted bin and return
-5. If the top chunk, release the block i.e. return the memory region back to OS. 
+4. If not the top block and is eligible for fast bins (size fits), insert the block in appropriate fast bin and return. 
+4. If the top block or large, fuse with contiguous chunks
+5. If not the top block, insert the block in unsorted bin and return
+5. If the top block, release the block i.e. return the memory region back to OS. 
 
 🔑 Modern kernels rarely shrink the program break. To make testing this path easier, we diverge here.
 
@@ -245,8 +267,7 @@ Common flags:
 
 ## Project Status
 
-This project is actively developed and frequently refactored as allocator behavior
-is refined and better understood.
+This project is actively developed and frequently refactored as allocator behavior is refined and better understood.
 
 Expect:
 
@@ -272,7 +293,7 @@ The following invariants are relied upon throughout the codebase. Many unit test
 
 ### Structural Invariants
 
-- Blocks are contiguous within an arena
+- Blocks are contiguous within an arena (if sbrk-backed)
 - Each block knows its true size via its header
 - If a block is free, its size is also written to its footer
 - A block can only be coalesced with neighbors that are also free (fastbins excluded)
@@ -286,7 +307,7 @@ The following invariants are relied upon throughout the codebase. Many unit test
 ### Bin Invariants
 
 - Fastbins are singly-linked and LIFO
-- Unsorted bin may temporarily contain chunks of any size
+- Unsorted bin may temporarily contain blocks of any size
 - Bin bitmaps may be stale until a full consolidation pass
 
 🔑 As glibc does it, bitmaps are lazily bookkept. An unset bit is a definite indicator of an empty bin,

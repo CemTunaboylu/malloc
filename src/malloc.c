@@ -165,7 +165,7 @@ BlockPtr extend_heap(const size_t aligned_size, enum Allocation allocation) {
 #ifndef TESTING
 static inline
 #endif
-    void append(BlockPtr sentinel, BlockPtr new_next) {
+    void append_after(BlockPtr sentinel, BlockPtr new_next) {
   BlockPtr next = sentinel->next;
   sentinel->next = new_next;
   new_next->next = next;
@@ -175,7 +175,7 @@ static inline
 
 static inline void insert_in_unsorted_bin(BlockPtr blk) {
   BlockPtr unsorted_sentinel = BLK_PTR_OF_UNSORTED(a_head);
-  append(unsorted_sentinel, blk);
+  append_after(unsorted_sentinel, blk);
   // We don't normally check on unsorted bin's bitmap, thus we don't housekeep.
   MM_MARK(PUT_IN_UNSORTED_BIN);
 }
@@ -207,7 +207,7 @@ static inline void hot_insert_in_appropriate_bin(BlockPtr blk) {
     insert_in_unsorted_bin(blk);
 }
 
-static inline BlockPtr fast_find(const size_t aligned_size) {
+static inline BlockPtr find_fastbin(const size_t aligned_size) {
   if (!CAN_BE_FAST_BINNED(aligned_size)) {
     return NULL;
   }
@@ -306,8 +306,8 @@ static inline
 }
 
 static inline BlockPtr
-find_smallest_fitting_large_bin_block(BlockPtr sentinel,
-                                      const size_t true_size) {
+find_smallest_fitting_block_in_large_bin(BlockPtr sentinel,
+                                         const size_t true_size) {
   // We are in the large bin that the block should be put.
   BlockPtr large = sentinel->next;
   while (sentinel != large->next && get_true_size(large->next) > true_size) {
@@ -316,7 +316,9 @@ find_smallest_fitting_large_bin_block(BlockPtr sentinel,
   return large;
 }
 
-#define IS_BLOCKS_SIZE_ENOUGH(blk, size) (get_true_size(blk) >= size)
+static inline int is_blocks_size_enough(const BlockPtr blk, const size_t size) {
+  return get_true_size(blk) >= size;
+}
 
 #ifndef TESTING
 static inline
@@ -336,29 +338,27 @@ static inline
     nxt = blk->next;
     MM_ASSERT(is_free(blk));
     remove_from_linkedlist(blk);
-    if (IS_BLOCKS_SIZE_ENOUGH(blk, aligned_size)) {
+    if (is_blocks_size_enough(blk, aligned_size)) {
       MM_MARK(UNSORTED_BINNED);
       return blk;
     }
     fuse_with_neighbors(&blk);
-    if (IS_BLOCKS_SIZE_ENOUGH(blk, aligned_size)) {
+    if (is_blocks_size_enough(blk, aligned_size)) {
       MM_MARK(UNSORTED_BINNED);
       return blk;
     }
     const size_t true_size = get_true_size(blk);
     const size_t bin_idx = GET_BARE_BIN_IDX(true_size);
-    BlockPtr bin_sentinel = BLK_PTR_IN_BIN_AT(a_head, bin_idx);
+    BlockPtr blk_to_append_after = BLK_PTR_IN_BIN_AT(a_head, bin_idx);
 
-    if (IS_SMALL(true_size)) {
-      append(bin_sentinel, blk);
-    } else {
+    if (!IS_SMALL(true_size)) {
       // We are in the large bin that the block should be put.
-      BlockPtr append_after =
-          find_smallest_fitting_large_bin_block(bin_sentinel, true_size);
       // get_true_size(append_after->next) <= true_size, thus we should append
       // blk here.
-      append(append_after, blk);
+      blk_to_append_after = find_smallest_fitting_block_in_large_bin(
+          blk_to_append_after, true_size);
     }
+    append_after(blk_to_append_after, blk);
     if (0 == READ_BINMAP(a_head, bin_idx))
       MARK_BIN(a_head, bin_idx);
 
@@ -369,7 +369,7 @@ static inline
   return NULL;
 }
 
-static inline BlockPtr get_from_small_bin(const size_t aligned_size) {
+static inline BlockPtr find_in_small_bin(const size_t aligned_size) {
   size_t bare_idx = GET_BARE_BIN_IDX(aligned_size);
   // Check if the exact sized bin has a chunk from bitmap.
   if (READ_BINMAP(a_head, bare_idx) == 0)
@@ -387,7 +387,7 @@ static inline BlockPtr get_from_small_bin(const size_t aligned_size) {
   return tail;
 }
 
-static inline BlockPtr get_from_large_bin(const size_t aligned_size) {
+static inline BlockPtr find_in_large_bin(const size_t aligned_size) {
   size_t bare_idx = GET_BARE_BIN_IDX(aligned_size);
   // The bin has an element
   if (READ_BINMAP(a_head, bare_idx) == 0)
@@ -400,11 +400,13 @@ static inline BlockPtr get_from_large_bin(const size_t aligned_size) {
     return NULL;
   }
   BlockPtr larger =
-      find_smallest_fitting_large_bin_block(sentinel, aligned_size);
+      find_smallest_fitting_block_in_large_bin(sentinel, aligned_size);
 
   if (get_true_size(larger) < aligned_size)
     return NULL;
   BlockPtr larger_next = larger->next;
+  // If larger has a next block which is not a sentinel and it is equal to
+  // aligned_size, pick next of larger.
   if (larger_next && larger_next != sentinel &&
       get_true_size(larger_next) == aligned_size)
     larger = larger_next;
@@ -416,7 +418,7 @@ static inline BlockPtr get_from_large_bin(const size_t aligned_size) {
 // Assuming that, we alreaedy checked for < MIN_CAP_FOR_MMAP.
 static inline BlockPtr find_in_bins(const size_t aligned_size) {
   if (IS_SMALL(aligned_size)) {
-    BlockPtr small = get_from_small_bin(aligned_size);
+    BlockPtr small = find_in_small_bin(aligned_size);
     if (small)
       return small;
 
@@ -440,14 +442,14 @@ static inline BlockPtr find_in_bins(const size_t aligned_size) {
   if (blk)
     return blk;
 
-  return get_from_large_bin(aligned_size);
+  return find_in_large_bin(aligned_size);
 }
 
 // We don't search on mmapped arenas, cannot find a free block in it's list
 // because when it is freed, we munmap it immediately.
 BlockPtr best_fit_find(size_t aligned_size) {
   // first check the fast bins
-  BlockPtr blk = fast_find(aligned_size);
+  BlockPtr blk = find_fastbin(aligned_size);
 
   if (blk)
     return blk;

@@ -996,7 +996,7 @@ static void test_best_find_bin(void) {
   TEST_ASSERT_(0 == READ_BINMAP(a_head, bare_idx),
                "bin map for bin[%lu] should be 0", bare_idx);
 
-  append(bin_sentinel, to_bin);
+  append_after(bin_sentinel, to_bin);
   MARK_BIN(a_head, bare_idx);
 
   void *binned = ensuring_malloc(n);
@@ -1153,7 +1153,7 @@ static void test_first_find_unsorted_bin(void) {
   TEST_ASSERT_(0 == READ_BINMAP(a_head, bare_idx),
                "bin map for bin[%lu] should be 0", bare_idx);
 
-  append(unsorted_sentinel, to_bin);
+  append_after(unsorted_sentinel, to_bin);
   MARK_BIN(a_head, 0);
 
   void *unsorted_binned = ensuring_malloc(n);

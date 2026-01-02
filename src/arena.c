@@ -25,12 +25,16 @@ static int sbrked_header_validation(const BlockPtr cand) {
   if (is_at_brk(cand))
     return 0;
   const BlockPtr fw = next(cand);
+  // Block's forward's information about this block serves as a check against
+  // mangled blocks.
   return is_at_brk(fw) || (is_free(cand) == is_prev_free(fw));
 }
 
 BlockPtr reconstruct_valid_header(void *p) {
   BlockPtr blk = reconstruct_from_user_memory(p);
   if (is_mmapped(blk)) {
+    // If a block is mmapped, it must be of certain size i.e. larger than
+    // MIN_CAP_FOR_MMAP.
     if (get_true_size(blk) < MIN_CAP_FOR_MMAP)
       return NULL;
   } else {
@@ -62,6 +66,8 @@ BlockPtr get_block_from_main_arena(const ArenaPtr ar_ptr, void *p) {
   if (NULL == head)
     return NULL;
 
+  // Main arena has its blocks contiguous, thus it is meaningful to have a
+  // bounds check when it comes to pointers for sbrk based blocks.
   void *the_end_of_arena_tail =
       (char *)tail + (get_true_size(tail) + SIZE_OF_BLOCK);
   if ((void *)head > p || the_end_of_arena_tail < p)
