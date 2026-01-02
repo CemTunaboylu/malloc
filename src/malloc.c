@@ -330,7 +330,7 @@ static inline
     // large bins.
     BlockPtr search_in_unsorted_consolidating(const size_t aligned_size) {
   const BlockPtr sentinel = BLK_PTR_OF_UNSORTED(a_head);
-  if (IS_LONE_SENTINEL(sentinel))
+  if (is_lone_sentinel(sentinel))
     return NULL;
   BlockPtr blk = sentinel->next;
   BlockPtr nxt = NULL;
@@ -376,7 +376,7 @@ static inline BlockPtr find_in_small_bin(const size_t aligned_size) {
     return NULL;
 
   BlockPtr sentinel = BLK_PTR_IN_BIN_AT(a_head, bare_idx);
-  if (IS_LONE_SENTINEL(sentinel)) {
+  if (is_lone_sentinel(sentinel)) {
     // We housekeep so that next calls don't have to.
     UNMARK_BIN(a_head, bare_idx);
     return NULL;
@@ -394,7 +394,7 @@ static inline BlockPtr find_in_large_bin(const size_t aligned_size) {
     return NULL;
 
   const BlockPtr sentinel = BLK_PTR_IN_BIN_AT(a_head, bare_idx);
-  if (IS_LONE_SENTINEL(sentinel)) {
+  if (is_lone_sentinel(sentinel)) {
     // We housekeep so that next calls don't have to.
     UNMARK_BIN(a_head, bare_idx);
     return NULL;

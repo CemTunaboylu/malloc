@@ -26,6 +26,10 @@ int can_be_fast_binned(const size_t aligned_req_size) {
          (aligned_req_size <= FAST_BIN_SIZE_CAP);
 }
 
+int is_lone_sentinel(const BlockPtr blk) {
+  return (blk->next == blk && blk->prev == blk);
+}
+
 size_t get_large_bin_idx(const size_t aligned_req_size);
 
 size_t get_bare_bin_idx(const size_t aligned_req_size) {
@@ -122,7 +126,7 @@ extern void print_arrow_to_stderr(void);
 void print_bin(ArenaPtr ar, const size_t idx) {
   debug_write_str("--- Bin print ---\n");
   BlockPtr sentinel = BLK_PTR_IN_BIN_AT((*ar), idx);
-  if (IS_LONE_SENTINEL(sentinel)) {
+  if (is_lone_sentinel(sentinel)) {
     debug_write_str("Bin[");
     debug_write_u64(idx);
     debug_write_str("] is empty\n");

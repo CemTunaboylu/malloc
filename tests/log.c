@@ -72,7 +72,7 @@ void print_unsorted_bins_to_fd(const int fd) {
   BlockPtr head = BLK_PTR_OF_UNSORTED(a_head);
 
   debug_write_str_fd(fd, "--- Unsorted bin print ---\n");
-  if (IS_LONE_SENTINEL(head)) {
+  if (is_lone_sentinel(head)) {
     debug_write_str_fd(fd, "Unsorted bin is empty\n");
     return;
   }

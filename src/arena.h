@@ -73,8 +73,6 @@ extern const size_t MAX_ALIGNMENT;
 
 #define BLK_PTR_OF_UNSORTED(a) ((BlockPtr)(&a.bins[0]))
 
-#define IS_LONE_SENTINEL(blk) (blk->next == blk && blk->prev == blk)
-
 // NOTE: thread-safety is not a concern at the moment,
 // thus we only have 2 arenas: sbrk arena and mmap arena.
 struct Arena {
@@ -123,6 +121,7 @@ BlockPtr get_block_from_main_arena(const ArenaPtr, void *);
 BlockPtr get_block_from_mmapped_arena(const MMapArenaPtr, void *);
 void allocated_bytes_update(size_t *, const int);
 int can_be_fast_binned(const size_t);
+int is_lone_sentinel(const BlockPtr);
 size_t get_bare_bin_idx(const size_t);
 size_t get_fast_bin_idx(const size_t);
 // Bare in the sense that SLOTS_FOR_BLOCK_OFFSET_ALIGNMENT is not accounted for,
