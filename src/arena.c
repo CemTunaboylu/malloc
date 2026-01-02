@@ -21,6 +21,10 @@ void allocated_bytes_update(size_t *total_bytes_allocated, const int update) {
   *total_bytes_allocated = allocated_bytes;
 }
 
+void move_fast_bin_to_next(const ArenaPtr arena, const size_t idx) {
+  arena->fastbins[idx] = arena->fastbins[idx]->next;
+}
+
 static int sbrked_header_validation(const BlockPtr cand) {
   if (is_at_brk(cand))
     return 0;

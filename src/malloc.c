@@ -217,7 +217,7 @@ static inline BlockPtr find_fastbin(const size_t aligned_size) {
   if (NULL == head)
     return NULL;
 
-  MOVE_FAST_BIN_TO_NEXT(a_head, idx);
+  move_fast_bin_to_next(&a_head, idx);
   MM_MARK(FASTBINNED);
   head->next = NULL;
   return head;
@@ -294,7 +294,7 @@ static inline
       MM_MARK(CONSOLIDATED);
       head = a_head.fastbins[f_idx];
       MM_ASSERT(head->next != head);
-      MOVE_FAST_BIN_TO_NEXT(a_head, f_idx);
+      move_fast_bin_to_next(&a_head, f_idx);
       // Fastbins are marked as used to prevent premature coalescing, thus we
       // first need to mark them as free.
       mark_as_free(head);
