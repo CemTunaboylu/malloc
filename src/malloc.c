@@ -201,14 +201,14 @@ static inline
 
 static inline void hot_insert_in_appropriate_bin(BlockPtr blk) {
   const size_t true_size = get_true_size(blk);
-  if (CAN_BE_FAST_BINNED(true_size))
+  if (can_be_fast_binned(true_size))
     insert_in_fastbin(blk);
   else
     insert_in_unsorted_bin(blk);
 }
 
 static inline BlockPtr find_fastbin(const size_t aligned_size) {
-  if (!CAN_BE_FAST_BINNED(aligned_size)) {
+  if (!can_be_fast_binned(aligned_size)) {
     return NULL;
   }
   const size_t idx = get_fast_bin_idx(aligned_size);
@@ -525,7 +525,7 @@ static inline void free_or_maybe_release_sbrked(BlockPtr blk) {
   int is_tail = is_at_main_arena_tail(blk);
   // If not at tail and small enough to fast bin, put it in the
   // fast bin without fusing with any neighbors.
-  if (!is_tail && CAN_BE_FAST_BINNED(get_true_size(blk))) {
+  if (!is_tail && can_be_fast_binned(get_true_size(blk))) {
     insert_in_fastbin(blk);
     return;
   }

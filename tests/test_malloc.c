@@ -631,7 +631,7 @@ static void test_copy_block(void) {
   for (size_t i = 0; i < min; i++)
     TEST_ASSERT_(p[i] == q[i], "%d != %d", p[i], q[i]);
 
-  TEST_ASSERT(CAN_BE_FAST_BINNED(get_true_size(p_blk)));
+  TEST_ASSERT(can_be_fast_binned(get_true_size(p_blk)));
   ensuring_free(p);
   MM_ASSERT_MARKER(PUT_IN_FASTBIN, 1);
   ensuring_free(q);
@@ -771,7 +771,7 @@ static void test_fast_bin(void) {
     TEST_ASSERT_(NULL == a_head.fastbins[i], "fast bin must be null");
     const size_t size = FAST_BIN_SIZE_START + FAST_BIN_STEP * i;
     const size_t f_idx = get_fast_bin_idx(size);
-    TEST_ASSERT_(1 == CAN_BE_FAST_BINNED(size), "must be fastbinned");
+    TEST_ASSERT_(1 == can_be_fast_binned(size), "must be fastbinned");
     TEST_ASSERT_(f_idx == i, "fast bin index for %lu != %lu", f_idx, i);
   }
 }
@@ -920,10 +920,10 @@ static void test_bare_bin_index(void) {
                  bare_bin_idx, exp);
   }
 
-  TEST_ASSERT_(!CAN_BE_FAST_BINNED(FAST_BIN_SIZE_START - ALIGNMENT),
+  TEST_ASSERT_(!can_be_fast_binned(FAST_BIN_SIZE_START - ALIGNMENT),
                "too small for fast bin failed %lu",
                FAST_BIN_SIZE_START - ALIGNMENT);
-  TEST_ASSERT_(!CAN_BE_FAST_BINNED(FAST_BIN_SIZE_CAP + ALIGNMENT),
+  TEST_ASSERT_(!can_be_fast_binned(FAST_BIN_SIZE_CAP + ALIGNMENT),
                "too big for fast bin failed %lu",
                FAST_BIN_SIZE_CAP + ALIGNMENT);
 

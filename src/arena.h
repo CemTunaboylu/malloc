@@ -88,10 +88,6 @@ extern const size_t MAX_ALIGNMENT;
        ? (aligned_req_size / SMALL_BIN_STEP)                                   \
        : LARGE_BIN_IDX_SHIFT(GET_LARGE_BIN_IDX(aligned_req_size)))
 
-#define CAN_BE_FAST_BINNED(aligned_req_size)                                   \
-  (aligned_req_size >= FAST_BIN_SIZE_START &&                                  \
-   aligned_req_size <= FAST_BIN_SIZE_CAP)
-
 // NOTE: thread-safety is not a concern at the moment,
 // thus we only have 2 arenas: sbrk arena and mmap arena.
 struct Arena {
@@ -139,6 +135,7 @@ struct MMapArena {
 BlockPtr get_block_from_main_arena(const ArenaPtr, void *);
 BlockPtr get_block_from_mmapped_arena(const MMapArenaPtr, void *);
 void allocated_bytes_update(size_t *, const int);
+int can_be_fast_binned(const size_t);
 size_t get_fast_bin_idx(const size_t);
 void move_fast_bin_to_next(const ArenaPtr, const size_t);
 #ifdef TESTING

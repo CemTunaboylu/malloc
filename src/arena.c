@@ -21,6 +21,11 @@ void allocated_bytes_update(size_t *total_bytes_allocated, const int update) {
   *total_bytes_allocated = allocated_bytes;
 }
 
+int can_be_fast_binned(const size_t aligned_req_size) {
+  return (aligned_req_size >= FAST_BIN_SIZE_START) &&
+         (aligned_req_size <= FAST_BIN_SIZE_CAP);
+}
+
 size_t get_fast_bin_idx(const size_t aligned_req_size) {
   return (aligned_req_size / FAST_BIN_STEP - 1);
 }
