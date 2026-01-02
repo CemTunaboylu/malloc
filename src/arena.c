@@ -16,6 +16,10 @@ int is_lone_sentinel(const BlockPtr blk) {
   return (blk->next == blk && blk->prev == blk);
 }
 
+int read_binmap(const ArenaPtr arena, const size_t bin_ix) {
+  return (arena->binmap[BIN_MAP_INDEX(bin_ix)] & CORRESPONDING_BIT(bin_ix));
+}
+
 size_t get_large_bin_idx(const size_t aligned_req_size);
 
 size_t get_bare_bin_idx(const size_t aligned_req_size) {

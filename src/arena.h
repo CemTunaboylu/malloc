@@ -64,9 +64,6 @@ extern const size_t MAX_ALIGNMENT;
 #define UNMARK_BIN(a, bin_ix)                                                  \
   (a.binmap[BIN_MAP_INDEX(bin_ix)] &= ~CORRESPONDING_BIT(bin_ix))
 
-#define READ_BINMAP(a, bin_ix)                                                 \
-  (a.binmap[BIN_MAP_INDEX(bin_ix)] & CORRESPONDING_BIT(bin_ix))
-
 // The repositioning trick glibc leverages for faking BlockPtr's in bins
 // NOTE: first element of the list (bin[0], bin[1]) are for unsorted bin
 #define BLK_PTR_IN_BIN_AT(a, i) ((BlockPtr)(&a.bins[i * 2]))
@@ -121,6 +118,7 @@ BlockPtr get_block_from_main_arena(const ArenaPtr, void *);
 BlockPtr get_block_from_mmapped_arena(const MMapArenaPtr, void *);
 int can_be_fast_binned(const size_t);
 int is_lone_sentinel(const BlockPtr);
+int read_binmap(const ArenaPtr, const size_t);
 size_t get_bare_bin_idx(const size_t);
 size_t get_fast_bin_idx(const size_t);
 // Bare in the sense that SLOTS_FOR_BLOCK_OFFSET_ALIGNMENT is not accounted for,

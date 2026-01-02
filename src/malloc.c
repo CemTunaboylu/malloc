@@ -359,7 +359,7 @@ static inline
           blk_to_append_after, true_size);
     }
     append_after(blk_to_append_after, blk);
-    if (0 == READ_BINMAP(a_head, bin_idx))
+    if (0 == read_binmap(&a_head, bin_idx))
       MARK_BIN(a_head, bin_idx);
 
     blk = nxt;
@@ -372,7 +372,7 @@ static inline
 static inline BlockPtr find_in_small_bin(const size_t aligned_size) {
   size_t bare_idx = get_bare_bin_idx(aligned_size);
   // Check if the exact sized bin has a chunk from bitmap.
-  if (READ_BINMAP(a_head, bare_idx) == 0)
+  if (read_binmap(&a_head, bare_idx) == 0)
     return NULL;
 
   BlockPtr sentinel = BLK_PTR_IN_BIN_AT(a_head, bare_idx);
@@ -390,7 +390,7 @@ static inline BlockPtr find_in_small_bin(const size_t aligned_size) {
 static inline BlockPtr find_in_large_bin(const size_t aligned_size) {
   size_t bare_idx = get_bare_bin_idx(aligned_size);
   // The bin has an element
-  if (READ_BINMAP(a_head, bare_idx) == 0)
+  if (read_binmap(&a_head, bare_idx) == 0)
     return NULL;
 
   const BlockPtr sentinel = BLK_PTR_IN_BIN_AT(a_head, bare_idx);
