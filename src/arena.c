@@ -21,6 +21,10 @@ void allocated_bytes_update(size_t *total_bytes_allocated, const int update) {
   *total_bytes_allocated = allocated_bytes;
 }
 
+size_t get_fast_bin_idx(const size_t aligned_req_size) {
+  return (aligned_req_size / FAST_BIN_STEP - 1);
+}
+
 void move_fast_bin_to_next(const ArenaPtr arena, const size_t idx) {
   arena->fastbins[idx] = arena->fastbins[idx]->next;
 }

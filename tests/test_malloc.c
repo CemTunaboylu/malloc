@@ -549,7 +549,7 @@ static void test_free_no_release_or_fusion_in_the_middle(void) {
   BlockPtr blk = recons_blk_from_user_mem_ptr(p);
   // Because it is in fast bin.
   TEST_ASSERT(!is_free(blk));
-  const size_t f_idx = GET_FAST_BIN_IDX(get_true_size(blk));
+  const size_t f_idx = get_fast_bin_idx(get_true_size(blk));
 
   FREE_BLKS_EXCEPT(num_blocks, ptrs, (size_t)1);
   ASSERT_UNSORTED_BIN_EMPTY();
@@ -770,7 +770,7 @@ static void test_fast_bin(void) {
   for (size_t i = 0; i < NUM_FAST_BINS; i++) {
     TEST_ASSERT_(NULL == a_head.fastbins[i], "fast bin must be null");
     const size_t size = FAST_BIN_SIZE_START + FAST_BIN_STEP * i;
-    const size_t f_idx = GET_FAST_BIN_IDX(size);
+    const size_t f_idx = get_fast_bin_idx(size);
     TEST_ASSERT_(1 == CAN_BE_FAST_BINNED(size), "must be fastbinned");
     TEST_ASSERT_(f_idx == i, "fast bin index for %lu != %lu", f_idx, i);
   }
@@ -929,7 +929,7 @@ static void test_bare_bin_index(void) {
 
   for (size_t ix = 0; ix < NUM_LARGE_BINS; ix++) {
     const size_t real = FAST_BIN_SIZE_START + ix * FAST_BIN_STEP;
-    const size_t fast_bin_idx = GET_FAST_BIN_IDX(real);
+    const size_t fast_bin_idx = get_fast_bin_idx(real);
     TEST_ASSERT_(fast_bin_idx == ix, "[fast bin] idx: %lu != %lu", fast_bin_idx,
                  ix);
   }
@@ -948,7 +948,7 @@ static void test_best_find_fast_bin(void) {
 
   // Artificially put it in the appropriate fast-bin
   BlockPtr to_fast_bin = recons_blk_from_user_mem_ptr(put_in_fast_bin);
-  const size_t idx = GET_FAST_BIN_IDX(get_true_size(to_fast_bin));
+  const size_t idx = get_fast_bin_idx(get_true_size(to_fast_bin));
   TEST_ASSERT_(NULL == a_head.fastbins[idx],
                "fastbin[%lu] should have been NULL, got %p", idx,
                (void *)a_head.fastbins[idx]);

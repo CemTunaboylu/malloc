@@ -189,7 +189,7 @@ static inline
   // pre-mature fusion.
   mark_as_used(blk);
   const size_t true_size = get_true_size(blk);
-  const size_t idx = GET_FAST_BIN_IDX(true_size);
+  const size_t idx = get_fast_bin_idx(true_size);
   if (NULL == a_head.fastbins[idx])
     a_head.fastbins[idx] = blk;
   else {
@@ -211,7 +211,7 @@ static inline BlockPtr find_fastbin(const size_t aligned_size) {
   if (!CAN_BE_FAST_BINNED(aligned_size)) {
     return NULL;
   }
-  const size_t idx = GET_FAST_BIN_IDX(aligned_size);
+  const size_t idx = get_fast_bin_idx(aligned_size);
   // NOTE: fastbins are singly-linked
   const BlockPtr head = a_head.fastbins[idx];
   if (NULL == head)
