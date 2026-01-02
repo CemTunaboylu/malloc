@@ -42,6 +42,10 @@ void move_fast_bin_to_next(const ArenaPtr arena, const size_t idx) {
   arena->fastbins[idx] = arena->fastbins[idx]->next;
 }
 
+void unmark_bin(const ArenaPtr arena, const size_t bin_ix) {
+  arena->binmap[BIN_MAP_INDEX(bin_ix)] &= ~CORRESPONDING_BIT(bin_ix);
+}
+
 // in case update < 0, it is assumed that |update| bytes are released i.e.
 // returned to OS/munmapped
 void allocated_bytes_update(size_t *total_bytes_allocated, const int update) {

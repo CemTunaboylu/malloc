@@ -745,7 +745,7 @@ static void test_mark_unmark_binmap(void) {
                  "bin %lu has bit value %u, should have been %u", i, read_val,
                  exp_val);
 
-    UNMARK_BIN(a_head, i);
+    unmark_bin(&a_head, i);
 
     read_val = read_binmap(&a_head, i);
 
