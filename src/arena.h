@@ -75,15 +75,6 @@ extern const size_t MAX_ALIGNMENT;
 
 #define IS_LONE_SENTINEL(blk) (blk->next == blk && blk->prev == blk)
 
-// Bare in the sense that SLOTS_FOR_BLOCK_OFFSET_ALIGNMENT is not accounted for,
-// the index returned must be retrieved with BLK_PTR_IN_BIN_AT to
-// properly index the corresponding bin.
-// NOTE: small bin starts at index 1, thus we don't -1.
-#define GET_LARGE_BIN_IDX(aligned_req_size)                                    \
-  (IS_SMALL(aligned_req_size)                                                  \
-       ? 0                                                                     \
-       : ((aligned_req_size - LARGE_BIN_SIZE_START) / LARGE_BIN_STEP))
-
 // NOTE: thread-safety is not a concern at the moment,
 // thus we only have 2 arenas: sbrk arena and mmap arena.
 struct Arena {
@@ -134,6 +125,11 @@ void allocated_bytes_update(size_t *, const int);
 int can_be_fast_binned(const size_t);
 size_t get_bare_bin_idx(const size_t);
 size_t get_fast_bin_idx(const size_t);
+// Bare in the sense that SLOTS_FOR_BLOCK_OFFSET_ALIGNMENT is not accounted for,
+// the index returned must be retrieved with BLK_PTR_IN_BIN_AT to
+// properly index the corresponding bin.
+// NOTE: small bin starts at index 1, thus we don't -1.
+size_t get_large_bin_idx(const size_t);
 void move_fast_bin_to_next(const ArenaPtr, const size_t);
 #ifdef TESTING
 size_t num_blocks_in_unsorted_bin(const ArenaPtr);
