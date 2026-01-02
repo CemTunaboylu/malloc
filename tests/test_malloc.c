@@ -737,7 +737,7 @@ static void test_bin_macros(void) {
 
 static void test_mark_unmark_binmap(void) {
   for (size_t i = 0; i < NUM_BINS; i++) {
-    MARK_BIN(a_head, i);
+    mark_bin(&a_head, i);
     uint32_t exp_val = ((size_t)1 << (i % MAP_STEP_BY_TYPE_WIDTH));
     uint32_t read_val = read_binmap(&a_head, i);
 
@@ -997,7 +997,7 @@ static void test_best_find_bin(void) {
                "bin map for bin[%lu] should be 0", bare_idx);
 
   append_after(bin_sentinel, to_bin);
-  MARK_BIN(a_head, bare_idx);
+  mark_bin(&a_head, bare_idx);
 
   void *binned = ensuring_malloc(n);
   TEST_ASSERT(binned);
@@ -1154,7 +1154,7 @@ static void test_first_find_unsorted_bin(void) {
                "bin map for bin[%lu] should be 0", bare_idx);
 
   append_after(unsorted_sentinel, to_bin);
-  MARK_BIN(a_head, 0);
+  mark_bin(&a_head, 0);
 
   void *unsorted_binned = ensuring_malloc(n);
   TEST_ASSERT(unsorted_binned);

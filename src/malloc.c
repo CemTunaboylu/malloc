@@ -360,7 +360,7 @@ static inline
     }
     append_after(blk_to_append_after, blk);
     if (0 == read_binmap(&a_head, bin_idx))
-      MARK_BIN(a_head, bin_idx);
+      mark_bin(&a_head, bin_idx);
 
     blk = nxt;
   }

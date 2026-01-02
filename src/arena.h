@@ -58,9 +58,6 @@ extern const size_t MAX_ALIGNMENT;
 #define CORRESPONDING_BIT_INDEX(bin_ix) (bin_ix & (MAP_STEP_BY_TYPE_WIDTH - 1))
 #define CORRESPONDING_BIT(bin_ix) ((size_t)1 << CORRESPONDING_BIT_INDEX(bin_ix))
 
-#define MARK_BIN(a, bin_ix)                                                    \
-  (a.binmap[BIN_MAP_INDEX(bin_ix)] |= (CORRESPONDING_BIT(bin_ix)))
-
 // The repositioning trick glibc leverages for faking BlockPtr's in bins
 // NOTE: first element of the list (bin[0], bin[1]) are for unsorted bin
 #define BLK_PTR_IN_BIN_AT(a, i) ((BlockPtr)(&a.bins[i * 2]))
@@ -124,6 +121,7 @@ size_t get_fast_bin_idx(const size_t);
 // NOTE: small bin starts at index 1, thus we don't -1.
 size_t get_large_bin_idx(const size_t);
 void allocated_bytes_update(size_t *, const int);
+void mark_bin(const ArenaPtr, const size_t);
 void move_fast_bin_to_next(const ArenaPtr, const size_t);
 void unmark_bin(const ArenaPtr, const size_t);
 #ifdef TESTING

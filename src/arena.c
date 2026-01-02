@@ -38,6 +38,10 @@ size_t get_large_bin_idx(const size_t aligned_req_size) {
               : ((aligned_req_size - LARGE_BIN_SIZE_START) / LARGE_BIN_STEP));
 }
 
+void mark_bin(const ArenaPtr arena, const size_t bin_ix) {
+  arena->binmap[BIN_MAP_INDEX(bin_ix)] |= (CORRESPONDING_BIT(bin_ix));
+}
+
 void move_fast_bin_to_next(const ArenaPtr arena, const size_t idx) {
   arena->fastbins[idx] = arena->fastbins[idx]->next;
 }
