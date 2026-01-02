@@ -1172,8 +1172,6 @@ static void test_first_find_unsorted_bin(void) {
   MM_ASSERT_MARKER(RELEASED, 1);
 }
 
-extern void print_bin(ArenaPtr ar, const size_t ix);
-
 static void test_full_flow_consolidation_and_free(void) {
   LOG("=== %s: start ===\n", __func__);
   void *ptrs[NUM_FAST_BINS];
