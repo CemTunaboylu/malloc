@@ -119,7 +119,6 @@ struct MMapArena {
 
 BlockPtr get_block_from_main_arena(const ArenaPtr, void *);
 BlockPtr get_block_from_mmapped_arena(const MMapArenaPtr, void *);
-void allocated_bytes_update(size_t *, const int);
 int can_be_fast_binned(const size_t);
 int is_lone_sentinel(const BlockPtr);
 size_t get_bare_bin_idx(const size_t);
@@ -129,6 +128,7 @@ size_t get_fast_bin_idx(const size_t);
 // properly index the corresponding bin.
 // NOTE: small bin starts at index 1, thus we don't -1.
 size_t get_large_bin_idx(const size_t);
+void allocated_bytes_update(size_t *, const int);
 void move_fast_bin_to_next(const ArenaPtr, const size_t);
 #ifdef TESTING
 size_t num_blocks_in_unsorted_bin(const ArenaPtr);

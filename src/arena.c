@@ -7,20 +7,6 @@
 
 extern size_t SIZE_OF_BLOCK;
 
-// in case update < 0, it is assumed that |update| bytes are released i.e.
-// returned to OS/munmapped
-void allocated_bytes_update(size_t *total_bytes_allocated, const int update) {
-  size_t allocated_bytes = *total_bytes_allocated;
-  if (update >= 0) {
-    allocated_bytes += update;
-  } else {
-    size_t decrement = (size_t)(-update);
-    MM_ASSERT(allocated_bytes >= decrement);
-    allocated_bytes -= decrement;
-  }
-  *total_bytes_allocated = allocated_bytes;
-}
-
 int can_be_fast_binned(const size_t aligned_req_size) {
   return (aligned_req_size >= FAST_BIN_SIZE_START) &&
          (aligned_req_size <= FAST_BIN_SIZE_CAP);
@@ -50,6 +36,20 @@ size_t get_large_bin_idx(const size_t aligned_req_size) {
 
 void move_fast_bin_to_next(const ArenaPtr arena, const size_t idx) {
   arena->fastbins[idx] = arena->fastbins[idx]->next;
+}
+
+// in case update < 0, it is assumed that |update| bytes are released i.e.
+// returned to OS/munmapped
+void allocated_bytes_update(size_t *total_bytes_allocated, const int update) {
+  size_t allocated_bytes = *total_bytes_allocated;
+  if (update >= 0) {
+    allocated_bytes += update;
+  } else {
+    size_t decrement = (size_t)(-update);
+    MM_ASSERT(allocated_bytes >= decrement);
+    allocated_bytes -= decrement;
+  }
+  *total_bytes_allocated = allocated_bytes;
 }
 
 static int sbrked_header_validation(const BlockPtr cand) {
