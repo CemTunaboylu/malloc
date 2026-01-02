@@ -165,7 +165,7 @@ BlockPtr extend_heap(const size_t aligned_size, enum Allocation allocation) {
 #ifndef TESTING
 static inline
 #endif
-    void append(BlockPtr sentinel, BlockPtr new_next) {
+    void append_after(BlockPtr sentinel, BlockPtr new_next) {
   BlockPtr next = sentinel->next;
   sentinel->next = new_next;
   new_next->next = next;
@@ -175,7 +175,7 @@ static inline
 
 static inline void insert_in_unsorted_bin(BlockPtr blk) {
   BlockPtr unsorted_sentinel = BLK_PTR_OF_UNSORTED(a_head);
-  append(unsorted_sentinel, blk);
+  append_after(unsorted_sentinel, blk);
   // We don't normally check on unsorted bin's bitmap, thus we don't housekeep.
   MM_MARK(PUT_IN_UNSORTED_BIN);
 }
@@ -349,18 +349,16 @@ static inline
     }
     const size_t true_size = get_true_size(blk);
     const size_t bin_idx = GET_BARE_BIN_IDX(true_size);
-    BlockPtr bin_sentinel = BLK_PTR_IN_BIN_AT(a_head, bin_idx);
+    BlockPtr blk_to_append_after = BLK_PTR_IN_BIN_AT(a_head, bin_idx);
 
-    if (IS_SMALL(true_size)) {
-      append(bin_sentinel, blk);
-    } else {
+    if (!IS_SMALL(true_size)) {
       // We are in the large bin that the block should be put.
-      BlockPtr append_after =
-          find_smallest_fitting_large_bin_block(bin_sentinel, true_size);
       // get_true_size(append_after->next) <= true_size, thus we should append
       // blk here.
-      append(append_after, blk);
+      blk_to_append_after = find_smallest_fitting_block_in_large_bin(
+          blk_to_append_after, true_size);
     }
+    append_after(blk_to_append_after, blk);
     if (0 == READ_BINMAP(a_head, bin_idx))
       MARK_BIN(a_head, bin_idx);
 
