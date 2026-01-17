@@ -723,15 +723,15 @@ static void test_bin_macros(void) {
   TEST_ASSERT(NUM_ELMNTS_NECESSARY_TO_MAP == exp_num_elms);
   for (size_t i = 0; i < MAP_STEP_BY_TYPE_WIDTH; i++) {
     TEST_ASSERT(i == CORRESPONDING_BIT_INDEX(i));
-    TEST_ASSERT(0 == BIN_MAP_INDEX(i));
+    TEST_ASSERT(0 == bin_map_index(i));
   }
   for (size_t i = MAP_STEP_BY_TYPE_WIDTH; i < (MAP_STEP_BY_TYPE_WIDTH * 2);
        i++) {
     TEST_ASSERT(i % MAP_STEP_BY_TYPE_WIDTH == CORRESPONDING_BIT_INDEX(i));
-    TEST_ASSERT(1 == BIN_MAP_INDEX(i));
+    TEST_ASSERT(1 == bin_map_index(i));
   }
   for (size_t i = 1; i < (exp_num_elms + 1); i++) {
-    TEST_ASSERT(i == BIN_MAP_INDEX(i * MAP_STEP_BY_TYPE_WIDTH));
+    TEST_ASSERT(i == bin_map_index(i * MAP_STEP_BY_TYPE_WIDTH));
   }
 }
 
