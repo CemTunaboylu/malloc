@@ -8,6 +8,7 @@
 extern size_t SIZE_OF_BLOCK;
 
 size_t bin_map_index(size_t index);
+BlockPtr blk_ptr_of_unsorted(ArenaPtr arena_ptr);
 
 int can_be_fast_binned(const size_t aligned_req_size) {
   return (aligned_req_size >= FAST_BIN_SIZE_START) &&
@@ -23,6 +24,10 @@ int read_binmap(const ArenaPtr arena, const size_t bin_ix) {
 }
 
 size_t bin_map_index(size_t index) { return index / MAP_STEP_BY_TYPE_WIDTH; }
+
+BlockPtr blk_ptr_of_unsorted(ArenaPtr arena_ptr) {
+  return (BlockPtr)(&arena_ptr->bins[0]);
+}
 
 size_t get_large_bin_idx(const size_t aligned_req_size);
 
@@ -126,7 +131,7 @@ BlockPtr get_block_from_main_arena(const ArenaPtr ar_ptr, void *p) {
 #ifdef TESTING
 
 size_t num_blocks_in_unsorted_bin(const ArenaPtr ar) {
-  const BlockPtr head = BLK_PTR_OF_UNSORTED((*ar));
+  const BlockPtr head = blk_ptr_of_unsorted(ar);
   BlockPtr cursor = head->next;
   size_t counter = 0;
   while (head != cursor) {

@@ -119,7 +119,7 @@ extern void *mm_realloc(void *, size_t);
 
 #define ASSERT_UNSORTED_BIN_EMPTY()                                            \
   {                                                                            \
-    TEST_ASSERT_(is_lone_sentinel(BLK_PTR_OF_UNSORTED(a_head)),                \
+    TEST_ASSERT_(is_lone_sentinel(blk_ptr_of_unsorted(&a_head)),               \
                  "unsorted bin should have been empty");                       \
   }
 
@@ -163,7 +163,7 @@ static void tear_heap_down(void) {
   TEST_CHECK_(
       NULL == blk,
       "[tear_down] search_in_unsorted_consolidating should have returned NULL");
-  BlockPtr unsorted_sentinel = BLK_PTR_OF_UNSORTED(a_head);
+  BlockPtr unsorted_sentinel = blk_ptr_of_unsorted(&a_head);
   TEST_CHECK_(is_lone_sentinel(unsorted_sentinel),
               "[tear_down] unsorted bin should have been emptied");
 
@@ -1038,7 +1038,7 @@ static void test_consolidate_fastbins(void) {
   PUT_ONE_BLOCK_INTO_EACH_FASTBIN(ptrs);
 
   // Ensure unsorted bin is empty
-  BlockPtr unsorted_bin_sentinel = BLK_PTR_OF_UNSORTED(a_head);
+  BlockPtr unsorted_bin_sentinel = blk_ptr_of_unsorted(&a_head);
   TEST_ASSERT_(
       is_lone_sentinel(unsorted_bin_sentinel),
       "unsorted bin sentinel should be pointing to itself got next:%p, prev:%p",
@@ -1100,7 +1100,7 @@ static void test_search_in_unsorted_consolidating(void) {
   PUT_ONE_BLOCK_INTO_EACH_FASTBIN(ptrs);
 
   // Ensure unsorted bin is empty
-  BlockPtr unsorted_bin_sentinel = BLK_PTR_OF_UNSORTED(a_head);
+  BlockPtr unsorted_bin_sentinel = blk_ptr_of_unsorted(&a_head);
   TEST_ASSERT_(
       is_lone_sentinel(unsorted_bin_sentinel),
       "unsorted bin sentinel should be pointing to itself got next:%p, prev:%p",
@@ -1143,7 +1143,7 @@ static void test_first_find_unsorted_bin(void) {
   const size_t bare_idx = get_bare_bin_idx(get_true_size(to_bin));
   TEST_ASSERT_(1 == bare_idx, "bare_idx %lu should have been 1", bare_idx);
 
-  BlockPtr unsorted_sentinel = BLK_PTR_OF_UNSORTED(a_head);
+  BlockPtr unsorted_sentinel = blk_ptr_of_unsorted(&a_head);
   remove_from_linkedlist(to_bin);
   mark_as_free(to_bin);
   TEST_ASSERT_(

@@ -61,8 +61,6 @@ extern const size_t MAX_ALIGNMENT;
 // NOTE: first element of the list (bin[0], bin[1]) are for unsorted bin
 #define BLK_PTR_IN_BIN_AT(a, i) ((BlockPtr)(&a.bins[i * 2]))
 
-#define BLK_PTR_OF_UNSORTED(a) ((BlockPtr)(&a.bins[0]))
-
 // NOTE: thread-safety is not a concern at the moment,
 // thus we only have 2 arenas: sbrk arena and mmap arena.
 struct Arena {
@@ -109,6 +107,7 @@ struct MMapArena {
 
 BlockPtr get_block_from_main_arena(const ArenaPtr, void *);
 BlockPtr get_block_from_mmapped_arena(const MMapArenaPtr, void *);
+BlockPtr blk_ptr_of_unsorted(ArenaPtr);
 int can_be_fast_binned(const size_t);
 int is_lone_sentinel(const BlockPtr);
 int read_binmap(const ArenaPtr, const size_t);

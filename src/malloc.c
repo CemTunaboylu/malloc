@@ -174,7 +174,7 @@ static inline
 }
 
 static inline void insert_in_unsorted_bin(BlockPtr blk) {
-  BlockPtr unsorted_sentinel = BLK_PTR_OF_UNSORTED(a_head);
+  BlockPtr unsorted_sentinel = blk_ptr_of_unsorted(&a_head);
   append_after(unsorted_sentinel, blk);
   // We don't normally check on unsorted bin's bitmap, thus we don't housekeep.
   MM_MARK(PUT_IN_UNSORTED_BIN);
@@ -329,7 +329,7 @@ static inline
     // NOTE: To keep things simple, we pay the price of sorted insertion to
     // large bins.
     BlockPtr search_in_unsorted_consolidating(const size_t aligned_size) {
-  const BlockPtr sentinel = BLK_PTR_OF_UNSORTED(a_head);
+  const BlockPtr sentinel = blk_ptr_of_unsorted(&a_head);
   if (is_lone_sentinel(sentinel))
     return NULL;
   BlockPtr blk = sentinel->next;
