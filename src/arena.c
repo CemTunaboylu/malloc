@@ -8,6 +8,7 @@
 extern size_t SIZE_OF_BLOCK;
 
 size_t bin_map_index(size_t index);
+size_t corresponding_bit(const size_t bin_ix);
 BlockPtr blk_ptr_of_unsorted(ArenaPtr arena_ptr);
 
 int can_be_fast_binned(const size_t aligned_req_size) {
@@ -20,7 +21,7 @@ int is_lone_sentinel(const BlockPtr blk) {
 }
 
 int read_binmap(const ArenaPtr arena, const size_t bin_ix) {
-  return (arena->binmap[bin_map_index(bin_ix)] & CORRESPONDING_BIT(bin_ix));
+  return (arena->binmap[bin_map_index(bin_ix)] & corresponding_bit(bin_ix));
 }
 
 size_t bin_map_index(size_t index) { return index / MAP_STEP_BY_TYPE_WIDTH; }
@@ -31,6 +32,10 @@ BlockPtr blk_ptr_of_unsorted(ArenaPtr arena_ptr) {
 
 size_t corresponding_bit_index(const size_t bin_ix) {
   return bin_ix & (MAP_STEP_BY_TYPE_WIDTH - 1);
+}
+
+size_t corresponding_bit(const size_t bin_ix) {
+  return (size_t)1 << corresponding_bit_index(bin_ix);
 }
 
 size_t get_large_bin_idx(const size_t aligned_req_size);
@@ -52,7 +57,7 @@ size_t get_large_bin_idx(const size_t aligned_req_size) {
 }
 
 void mark_bin(const ArenaPtr arena, const size_t bin_ix) {
-  arena->binmap[bin_map_index(bin_ix)] |= (CORRESPONDING_BIT(bin_ix));
+  arena->binmap[bin_map_index(bin_ix)] |= (corresponding_bit(bin_ix));
 }
 
 void move_fast_bin_to_next(const ArenaPtr arena, const size_t idx) {
@@ -60,7 +65,7 @@ void move_fast_bin_to_next(const ArenaPtr arena, const size_t idx) {
 }
 
 void unmark_bin(const ArenaPtr arena, const size_t bin_ix) {
-  arena->binmap[bin_map_index(bin_ix)] &= ~CORRESPONDING_BIT(bin_ix);
+  arena->binmap[bin_map_index(bin_ix)] &= ~corresponding_bit(bin_ix);
 }
 
 // in case update < 0, it is assumed that |update| bytes are released i.e.
