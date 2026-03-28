@@ -54,8 +54,7 @@ extern const size_t MAX_ALIGNMENT;
 #define MAP_STEP_BY_TYPE_WIDTH (sizeof(MAP_ELMNT_TYPE) * 8)
 #define NUM_ELMNTS_NECESSARY_TO_MAP ((NUM_BINS) / MAP_STEP_BY_TYPE_WIDTH)
 
-#define CORRESPONDING_BIT_INDEX(bin_ix) (bin_ix & (MAP_STEP_BY_TYPE_WIDTH - 1))
-#define CORRESPONDING_BIT(bin_ix) ((size_t)1 << CORRESPONDING_BIT_INDEX(bin_ix))
+#define CORRESPONDING_BIT(bin_ix) ((size_t)1 << corresponding_bit_index(bin_ix))
 
 // The repositioning trick glibc leverages for faking BlockPtr's in bins
 // NOTE: first element of the list (bin[0], bin[1]) are for unsorted bin
@@ -112,6 +111,7 @@ int can_be_fast_binned(const size_t);
 int is_lone_sentinel(const BlockPtr);
 int read_binmap(const ArenaPtr, const size_t);
 size_t bin_map_index(size_t);
+size_t corresponding_bit_index(const size_t);
 size_t get_bare_bin_idx(const size_t);
 size_t get_fast_bin_idx(const size_t);
 // Bare in the sense that SLOTS_FOR_BLOCK_OFFSET_ALIGNMENT is not accounted for,

@@ -29,6 +29,10 @@ BlockPtr blk_ptr_of_unsorted(ArenaPtr arena_ptr) {
   return (BlockPtr)(&arena_ptr->bins[0]);
 }
 
+size_t corresponding_bit_index(const size_t bin_ix) {
+  return bin_ix & (MAP_STEP_BY_TYPE_WIDTH - 1);
+}
+
 size_t get_large_bin_idx(const size_t aligned_req_size);
 
 size_t get_bare_bin_idx(const size_t aligned_req_size) {
