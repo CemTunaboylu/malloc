@@ -7,6 +7,67 @@
 
 extern size_t SIZE_OF_BLOCK;
 
+size_t bin_map_index(size_t index);
+size_t corresponding_bit(const size_t bin_ix);
+BlockPtr blk_ptr_of_unsorted(ArenaPtr arena_ptr);
+
+int can_be_fast_binned(const size_t aligned_req_size) {
+  return (aligned_req_size >= FAST_BIN_SIZE_START) &&
+         (aligned_req_size <= FAST_BIN_SIZE_CAP);
+}
+
+int is_lone_sentinel(const BlockPtr blk) {
+  return (blk->next == blk && blk->prev == blk);
+}
+
+int read_binmap(const ArenaPtr arena, const size_t bin_ix) {
+  return (arena->binmap[bin_map_index(bin_ix)] & corresponding_bit(bin_ix));
+}
+
+size_t bin_map_index(size_t index) { return index / MAP_STEP_BY_TYPE_WIDTH; }
+
+BlockPtr blk_ptr_of_unsorted(ArenaPtr arena_ptr) {
+  return (BlockPtr)(&arena_ptr->bins[0]);
+}
+
+size_t corresponding_bit_index(const size_t bin_ix) {
+  return bin_ix & (MAP_STEP_BY_TYPE_WIDTH - 1);
+}
+
+size_t corresponding_bit(const size_t bin_ix) {
+  return (size_t)1 << corresponding_bit_index(bin_ix);
+}
+
+size_t get_large_bin_idx(const size_t aligned_req_size);
+
+size_t get_bare_bin_idx(const size_t aligned_req_size) {
+  return (aligned_req_size <= SMALL_BIN_SIZE_CAP
+              ? (aligned_req_size / SMALL_BIN_STEP)
+              : LARGE_BIN_IDX_SHIFT(get_large_bin_idx(aligned_req_size)));
+}
+
+size_t get_fast_bin_idx(const size_t aligned_req_size) {
+  return (aligned_req_size / FAST_BIN_STEP - 1);
+}
+
+size_t get_large_bin_idx(const size_t aligned_req_size) {
+  return (IS_SMALL(aligned_req_size)
+              ? 0
+              : ((aligned_req_size - LARGE_BIN_SIZE_START) / LARGE_BIN_STEP));
+}
+
+void mark_bin(const ArenaPtr arena, const size_t bin_ix) {
+  arena->binmap[bin_map_index(bin_ix)] |= (corresponding_bit(bin_ix));
+}
+
+void move_fast_bin_to_next(const ArenaPtr arena, const size_t idx) {
+  arena->fastbins[idx] = arena->fastbins[idx]->next;
+}
+
+void unmark_bin(const ArenaPtr arena, const size_t bin_ix) {
+  arena->binmap[bin_map_index(bin_ix)] &= ~corresponding_bit(bin_ix);
+}
+
 // in case update < 0, it is assumed that |update| bytes are released i.e.
 // returned to OS/munmapped
 void allocated_bytes_update(size_t *total_bytes_allocated, const int update) {
@@ -79,7 +140,7 @@ BlockPtr get_block_from_main_arena(const ArenaPtr ar_ptr, void *p) {
 #ifdef TESTING
 
 size_t num_blocks_in_unsorted_bin(const ArenaPtr ar) {
-  const BlockPtr head = BLK_PTR_OF_UNSORTED((*ar));
+  const BlockPtr head = blk_ptr_of_unsorted(ar);
   BlockPtr cursor = head->next;
   size_t counter = 0;
   while (head != cursor) {
@@ -95,7 +156,7 @@ extern void print_arrow_to_stderr(void);
 void print_bin(ArenaPtr ar, const size_t idx) {
   debug_write_str("--- Bin print ---\n");
   BlockPtr sentinel = BLK_PTR_IN_BIN_AT((*ar), idx);
-  if (IS_LONE_SENTINEL(sentinel)) {
+  if (is_lone_sentinel(sentinel)) {
     debug_write_str("Bin[");
     debug_write_u64(idx);
     debug_write_str("] is empty\n");

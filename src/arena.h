@@ -54,50 +54,9 @@ extern const size_t MAX_ALIGNMENT;
 #define MAP_STEP_BY_TYPE_WIDTH (sizeof(MAP_ELMNT_TYPE) * 8)
 #define NUM_ELMNTS_NECESSARY_TO_MAP ((NUM_BINS) / MAP_STEP_BY_TYPE_WIDTH)
 
-#define BIN_MAP_INDEX(b) (b / MAP_STEP_BY_TYPE_WIDTH)
-#define CORRESPONDING_BIT_INDEX(bin_ix) (bin_ix & (MAP_STEP_BY_TYPE_WIDTH - 1))
-#define CORRESPONDING_BIT(bin_ix) ((size_t)1 << CORRESPONDING_BIT_INDEX(bin_ix))
-
-#define MARK_BIN(a, bin_ix)                                                    \
-  (a.binmap[BIN_MAP_INDEX(bin_ix)] |= (CORRESPONDING_BIT(bin_ix)))
-
-#define UNMARK_BIN(a, bin_ix)                                                  \
-  (a.binmap[BIN_MAP_INDEX(bin_ix)] &= ~CORRESPONDING_BIT(bin_ix))
-
-#define READ_BINMAP(a, bin_ix)                                                 \
-  (a.binmap[BIN_MAP_INDEX(bin_ix)] & CORRESPONDING_BIT(bin_ix))
-
 // The repositioning trick glibc leverages for faking BlockPtr's in bins
 // NOTE: first element of the list (bin[0], bin[1]) are for unsorted bin
 #define BLK_PTR_IN_BIN_AT(a, i) ((BlockPtr)(&a.bins[i * 2]))
-
-#define BLK_PTR_OF_UNSORTED(a) ((BlockPtr)(&a.bins[0]))
-
-#define IS_LONE_SENTINEL(blk) (blk->next == blk && blk->prev == blk)
-
-// Bare in the sense that SLOTS_FOR_BLOCK_OFFSET_ALIGNMENT is not accounted for,
-// the index returned must be retrieved with BLK_PTR_IN_BIN_AT to
-// properly index the corresponding bin.
-// NOTE: small bin starts at index 1, thus we don't -1.
-#define GET_LARGE_BIN_IDX(aligned_req_size)                                    \
-  (IS_SMALL(aligned_req_size)                                                  \
-       ? 0                                                                     \
-       : ((aligned_req_size - LARGE_BIN_SIZE_START) / LARGE_BIN_STEP))
-#define GET_BARE_BIN_IDX(aligned_req_size)                                     \
-  (aligned_req_size <= SMALL_BIN_SIZE_CAP                                      \
-       ? (aligned_req_size / SMALL_BIN_STEP)                                   \
-       : LARGE_BIN_IDX_SHIFT(GET_LARGE_BIN_IDX(aligned_req_size)))
-
-#define CAN_BE_FAST_BINNED(aligned_req_size)                                   \
-  (aligned_req_size >= FAST_BIN_SIZE_START &&                                  \
-   aligned_req_size <= FAST_BIN_SIZE_CAP)
-#define GET_FAST_BIN_IDX(aligned_req_size)                                     \
-  (aligned_req_size / FAST_BIN_STEP - 1)
-
-#define MOVE_FAST_BIN_TO_NEXT(a, idx)                                          \
-  {                                                                            \
-    a.fastbins[idx] = a.fastbins[idx]->next;                                   \
-  }
 
 // NOTE: thread-safety is not a concern at the moment,
 // thus we only have 2 arenas: sbrk arena and mmap arena.
@@ -145,7 +104,24 @@ struct MMapArena {
 
 BlockPtr get_block_from_main_arena(const ArenaPtr, void *);
 BlockPtr get_block_from_mmapped_arena(const MMapArenaPtr, void *);
+BlockPtr blk_ptr_of_unsorted(ArenaPtr);
+int can_be_fast_binned(const size_t);
+int is_lone_sentinel(const BlockPtr);
+int read_binmap(const ArenaPtr, const size_t);
+size_t bin_map_index(size_t);
+size_t corresponding_bit_index(const size_t);
+size_t corresponding_bit(const size_t );
+size_t get_bare_bin_idx(const size_t);
+size_t get_fast_bin_idx(const size_t);
+// Bare in the sense that SLOTS_FOR_BLOCK_OFFSET_ALIGNMENT is not accounted for,
+// the index returned must be retrieved with BLK_PTR_IN_BIN_AT to
+// properly index the corresponding bin.
+// NOTE: small bin starts at index 1, thus we don't -1.
+size_t get_large_bin_idx(const size_t);
 void allocated_bytes_update(size_t *, const int);
+void mark_bin(const ArenaPtr, const size_t);
+void move_fast_bin_to_next(const ArenaPtr, const size_t);
+void unmark_bin(const ArenaPtr, const size_t);
 #ifdef TESTING
 size_t num_blocks_in_unsorted_bin(const ArenaPtr);
 void print_bin(ArenaPtr, const size_t);

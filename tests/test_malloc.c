@@ -119,7 +119,7 @@ extern void *mm_realloc(void *, size_t);
 
 #define ASSERT_UNSORTED_BIN_EMPTY()                                            \
   {                                                                            \
-    TEST_ASSERT_(IS_LONE_SENTINEL(BLK_PTR_OF_UNSORTED(a_head)),                \
+    TEST_ASSERT_(is_lone_sentinel(blk_ptr_of_unsorted(&a_head)),               \
                  "unsorted bin should have been empty");                       \
   }
 
@@ -163,8 +163,8 @@ static void tear_heap_down(void) {
   TEST_CHECK_(
       NULL == blk,
       "[tear_down] search_in_unsorted_consolidating should have returned NULL");
-  BlockPtr unsorted_sentinel = BLK_PTR_OF_UNSORTED(a_head);
-  TEST_CHECK_(IS_LONE_SENTINEL(unsorted_sentinel),
+  BlockPtr unsorted_sentinel = blk_ptr_of_unsorted(&a_head);
+  TEST_CHECK_(is_lone_sentinel(unsorted_sentinel),
               "[tear_down] unsorted bin should have been emptied");
 
   BlockPtr head = a_head.head;
@@ -197,7 +197,7 @@ static void check_main_arena_bins_are_empty(void) {
   BlockPtr bin;
   for (size_t i = 0; i < NUM_BINS; i++) {
     bin = BLK_PTR_IN_BIN_AT(a_head, i);
-    TEST_CHECK_(IS_LONE_SENTINEL(bin), "bin[%lu] must point to itself", i);
+    TEST_CHECK_(is_lone_sentinel(bin), "bin[%lu] must point to itself", i);
   }
 }
 
@@ -549,7 +549,7 @@ static void test_free_no_release_or_fusion_in_the_middle(void) {
   BlockPtr blk = recons_blk_from_user_mem_ptr(p);
   // Because it is in fast bin.
   TEST_ASSERT(!is_free(blk));
-  const size_t f_idx = GET_FAST_BIN_IDX(get_true_size(blk));
+  const size_t f_idx = get_fast_bin_idx(get_true_size(blk));
 
   FREE_BLKS_EXCEPT(num_blocks, ptrs, (size_t)1);
   ASSERT_UNSORTED_BIN_EMPTY();
@@ -631,7 +631,7 @@ static void test_copy_block(void) {
   for (size_t i = 0; i < min; i++)
     TEST_ASSERT_(p[i] == q[i], "%d != %d", p[i], q[i]);
 
-  TEST_ASSERT(CAN_BE_FAST_BINNED(get_true_size(p_blk)));
+  TEST_ASSERT(can_be_fast_binned(get_true_size(p_blk)));
   ensuring_free(p);
   MM_ASSERT_MARKER(PUT_IN_FASTBIN, 1);
   ensuring_free(q);
@@ -722,32 +722,32 @@ static void test_bin_macros(void) {
   size_t exp_num_elms = 4;
   TEST_ASSERT(NUM_ELMNTS_NECESSARY_TO_MAP == exp_num_elms);
   for (size_t i = 0; i < MAP_STEP_BY_TYPE_WIDTH; i++) {
-    TEST_ASSERT(i == CORRESPONDING_BIT_INDEX(i));
-    TEST_ASSERT(0 == BIN_MAP_INDEX(i));
+    TEST_ASSERT(i == corresponding_bit_index(i));
+    TEST_ASSERT(0 == bin_map_index(i));
   }
   for (size_t i = MAP_STEP_BY_TYPE_WIDTH; i < (MAP_STEP_BY_TYPE_WIDTH * 2);
        i++) {
-    TEST_ASSERT(i % MAP_STEP_BY_TYPE_WIDTH == CORRESPONDING_BIT_INDEX(i));
-    TEST_ASSERT(1 == BIN_MAP_INDEX(i));
+    TEST_ASSERT(i % MAP_STEP_BY_TYPE_WIDTH == corresponding_bit_index(i));
+    TEST_ASSERT(1 == bin_map_index(i));
   }
   for (size_t i = 1; i < (exp_num_elms + 1); i++) {
-    TEST_ASSERT(i == BIN_MAP_INDEX(i * MAP_STEP_BY_TYPE_WIDTH));
+    TEST_ASSERT(i == bin_map_index(i * MAP_STEP_BY_TYPE_WIDTH));
   }
 }
 
 static void test_mark_unmark_binmap(void) {
   for (size_t i = 0; i < NUM_BINS; i++) {
-    MARK_BIN(a_head, i);
+    mark_bin(&a_head, i);
     uint32_t exp_val = ((size_t)1 << (i % MAP_STEP_BY_TYPE_WIDTH));
-    uint32_t read_val = READ_BINMAP(a_head, i);
+    uint32_t read_val = read_binmap(&a_head, i);
 
     TEST_ASSERT_(read_val == exp_val,
                  "bin %lu has bit value %u, should have been %u", i, read_val,
                  exp_val);
 
-    UNMARK_BIN(a_head, i);
+    unmark_bin(&a_head, i);
 
-    read_val = READ_BINMAP(a_head, i);
+    read_val = read_binmap(&a_head, i);
 
     TEST_ASSERT_(0 == read_val, "bin %lu has bit value %u, should have been %u",
                  i, read_val, 0);
@@ -762,7 +762,7 @@ static void test_bin_repositioning_trick(void) {
   BlockPtr bin;
   for (size_t i = 0; i < NUM_BINS; i++) {
     bin = BLK_PTR_IN_BIN_AT(a_head, i);
-    TEST_ASSERT_(IS_LONE_SENTINEL(bin), "bin[%lu] must point to itself", i);
+    TEST_ASSERT_(is_lone_sentinel(bin), "bin[%lu] must point to itself", i);
   }
 }
 
@@ -770,8 +770,8 @@ static void test_fast_bin(void) {
   for (size_t i = 0; i < NUM_FAST_BINS; i++) {
     TEST_ASSERT_(NULL == a_head.fastbins[i], "fast bin must be null");
     const size_t size = FAST_BIN_SIZE_START + FAST_BIN_STEP * i;
-    const size_t f_idx = GET_FAST_BIN_IDX(size);
-    TEST_ASSERT_(1 == CAN_BE_FAST_BINNED(size), "must be fastbinned");
+    const size_t f_idx = get_fast_bin_idx(size);
+    TEST_ASSERT_(1 == can_be_fast_binned(size), "must be fastbinned");
     TEST_ASSERT_(f_idx == i, "fast bin index for %lu != %lu", f_idx, i);
   }
 }
@@ -895,41 +895,41 @@ static void test_realloc_from_mmapped_to_main(void) {
 static void test_bare_bin_index(void) {
   for (size_t ix = 0; ix < NUM_SMALL_BINS; ix++) {
     const size_t real = SMALL_BIN_SIZE_START + (ix * SMALL_BIN_STEP);
-    const size_t bare_bin_idx = GET_BARE_BIN_IDX(real);
+    const size_t bare_bin_idx = get_bare_bin_idx(real);
     const size_t exp = ix + 1;
     TEST_ASSERT_(bare_bin_idx == exp, "[small bin] idx: %lu != %lu",
                  bare_bin_idx, exp);
   }
 
-  TEST_ASSERT_(GET_BARE_BIN_IDX(SMALL_BIN_SIZE_CAP + ALIGNMENT) ==
+  TEST_ASSERT_(get_bare_bin_idx(SMALL_BIN_SIZE_CAP + ALIGNMENT) ==
                    LARGE_BIN_IDX_SHIFT(0),
                "large bin first size fails %lu != %lu",
-               GET_BARE_BIN_IDX(SMALL_BIN_SIZE_CAP + ALIGNMENT),
+               get_bare_bin_idx(SMALL_BIN_SIZE_CAP + ALIGNMENT),
                LARGE_BIN_IDX_SHIFT(0));
-  TEST_ASSERT_(GET_BARE_BIN_IDX(LARGE_BIN_SIZE_START + LARGE_BIN_STEP -
+  TEST_ASSERT_(get_bare_bin_idx(LARGE_BIN_SIZE_START + LARGE_BIN_STEP -
                                 ALIGNMENT) == LARGE_BIN_IDX_SHIFT(0),
                "large bin first size fails, %lu != %lu",
-               GET_BARE_BIN_IDX(LARGE_BIN_SIZE_START - ALIGNMENT),
+               get_bare_bin_idx(LARGE_BIN_SIZE_START - ALIGNMENT),
                LARGE_BIN_IDX_SHIFT(0));
 
   for (size_t ix = 1; ix <= NUM_LARGE_BINS; ix++) {
     const size_t real = LARGE_BIN_SIZE_START + ix * LARGE_BIN_STEP;
-    const size_t bare_bin_idx = GET_BARE_BIN_IDX(real);
+    const size_t bare_bin_idx = get_bare_bin_idx(real);
     const size_t exp = LARGE_BIN_IDX_SHIFT(ix);
     TEST_ASSERT_(bare_bin_idx == exp, "[large bin] idx: %lu != %lu",
                  bare_bin_idx, exp);
   }
 
-  TEST_ASSERT_(!CAN_BE_FAST_BINNED(FAST_BIN_SIZE_START - ALIGNMENT),
+  TEST_ASSERT_(!can_be_fast_binned(FAST_BIN_SIZE_START - ALIGNMENT),
                "too small for fast bin failed %lu",
                FAST_BIN_SIZE_START - ALIGNMENT);
-  TEST_ASSERT_(!CAN_BE_FAST_BINNED(FAST_BIN_SIZE_CAP + ALIGNMENT),
+  TEST_ASSERT_(!can_be_fast_binned(FAST_BIN_SIZE_CAP + ALIGNMENT),
                "too big for fast bin failed %lu",
                FAST_BIN_SIZE_CAP + ALIGNMENT);
 
   for (size_t ix = 0; ix < NUM_LARGE_BINS; ix++) {
     const size_t real = FAST_BIN_SIZE_START + ix * FAST_BIN_STEP;
-    const size_t fast_bin_idx = GET_FAST_BIN_IDX(real);
+    const size_t fast_bin_idx = get_fast_bin_idx(real);
     TEST_ASSERT_(fast_bin_idx == ix, "[fast bin] idx: %lu != %lu", fast_bin_idx,
                  ix);
   }
@@ -948,7 +948,7 @@ static void test_best_find_fast_bin(void) {
 
   // Artificially put it in the appropriate fast-bin
   BlockPtr to_fast_bin = recons_blk_from_user_mem_ptr(put_in_fast_bin);
-  const size_t idx = GET_FAST_BIN_IDX(get_true_size(to_fast_bin));
+  const size_t idx = get_fast_bin_idx(get_true_size(to_fast_bin));
   TEST_ASSERT_(NULL == a_head.fastbins[idx],
                "fastbin[%lu] should have been NULL, got %p", idx,
                (void *)a_head.fastbins[idx]);
@@ -982,22 +982,22 @@ static void test_best_find_bin(void) {
 
   // Artificially put it in the appropriate bin
   BlockPtr to_bin = recons_blk_from_user_mem_ptr(put_in_bin);
-  const size_t bare_idx = GET_BARE_BIN_IDX(get_true_size(to_bin));
+  const size_t bare_idx = get_bare_bin_idx(get_true_size(to_bin));
   TEST_ASSERT_(1 == bare_idx, "bare_idx %lu should have been 1", bare_idx);
 
   BlockPtr bin_sentinel = BLK_PTR_IN_BIN_AT(a_head, bare_idx);
   mark_as_free(to_bin);
-  TEST_ASSERT_(IS_LONE_SENTINEL(bin_sentinel),
+  TEST_ASSERT_(is_lone_sentinel(bin_sentinel),
                "sentinel for bin[%lu] should be pointing to itself got "
                "next:%p, prev:%p",
                bare_idx, (void *)bin_sentinel->next,
                (void *)bin_sentinel->prev);
 
-  TEST_ASSERT_(0 == READ_BINMAP(a_head, bare_idx),
+  TEST_ASSERT_(0 == read_binmap(&a_head, bare_idx),
                "bin map for bin[%lu] should be 0", bare_idx);
 
   append_after(bin_sentinel, to_bin);
-  MARK_BIN(a_head, bare_idx);
+  mark_bin(&a_head, bare_idx);
 
   void *binned = ensuring_malloc(n);
   TEST_ASSERT(binned);
@@ -1007,7 +1007,7 @@ static void test_best_find_bin(void) {
   TEST_ASSERT(from_bin == to_bin);
   TEST_ASSERT(get_true_size(to_bin) == get_true_size(from_bin));
   TEST_ASSERT_(
-      IS_LONE_SENTINEL(bin_sentinel),
+      is_lone_sentinel(bin_sentinel),
       "sentinel for bin[%lu] should be pointing to itself got next:%p, prev:%p",
       bare_idx, (void *)bin_sentinel->next, (void *)bin_sentinel->prev);
 
@@ -1038,13 +1038,13 @@ static void test_consolidate_fastbins(void) {
   PUT_ONE_BLOCK_INTO_EACH_FASTBIN(ptrs);
 
   // Ensure unsorted bin is empty
-  BlockPtr unsorted_bin_sentinel = BLK_PTR_OF_UNSORTED(a_head);
+  BlockPtr unsorted_bin_sentinel = blk_ptr_of_unsorted(&a_head);
   TEST_ASSERT_(
-      IS_LONE_SENTINEL(unsorted_bin_sentinel),
+      is_lone_sentinel(unsorted_bin_sentinel),
       "unsorted bin sentinel should be pointing to itself got next:%p, prev:%p",
       (void *)unsorted_bin_sentinel->next, (void *)unsorted_bin_sentinel->prev);
 
-  TEST_ASSERT_(0 == READ_BINMAP(a_head, 0),
+  TEST_ASSERT_(0 == read_binmap(&a_head, 0),
                "bin map for unsorted bin should be 0");
 
   // Since all bins are in a fast bin and contiguous to each other,
@@ -1058,7 +1058,7 @@ static void test_consolidate_fastbins(void) {
   MM_ASSERT_MARKER(PUT_IN_UNSORTED_BIN, NUM_FAST_BINS);
   ASSERT_FASTBINS_EMPTY();
 
-  TEST_ASSERT_(!IS_LONE_SENTINEL(unsorted_bin_sentinel),
+  TEST_ASSERT_(!is_lone_sentinel(unsorted_bin_sentinel),
                "unsorted bin should not be empty");
 
   size_t counter = 0;
@@ -1100,13 +1100,13 @@ static void test_search_in_unsorted_consolidating(void) {
   PUT_ONE_BLOCK_INTO_EACH_FASTBIN(ptrs);
 
   // Ensure unsorted bin is empty
-  BlockPtr unsorted_bin_sentinel = BLK_PTR_OF_UNSORTED(a_head);
+  BlockPtr unsorted_bin_sentinel = blk_ptr_of_unsorted(&a_head);
   TEST_ASSERT_(
-      IS_LONE_SENTINEL(unsorted_bin_sentinel),
+      is_lone_sentinel(unsorted_bin_sentinel),
       "unsorted bin sentinel should be pointing to itself got next:%p, prev:%p",
       (void *)unsorted_bin_sentinel->next, (void *)unsorted_bin_sentinel->prev);
 
-  TEST_ASSERT_(0 == READ_BINMAP(a_head, 0),
+  TEST_ASSERT_(0 == read_binmap(&a_head, 0),
                "bin map for unsorted bin should be 0");
 
   const size_t size_all_fast_bins_combined =
@@ -1124,7 +1124,7 @@ static void test_search_in_unsorted_consolidating(void) {
   MM_ASSERT_MARKER(UNSORTED_BINNED, 1);
 
   ASSERT_FASTBINS_EMPTY();
-  TEST_ASSERT_(IS_LONE_SENTINEL(unsorted_bin_sentinel),
+  TEST_ASSERT_(is_lone_sentinel(unsorted_bin_sentinel),
                "unsorted bin should be empty");
 }
 
@@ -1140,21 +1140,21 @@ static void test_first_find_unsorted_bin(void) {
   LOG("\tpost-malloc with size %lu and setting values for data ===\n", n);
   // Artificially put it in the appropriate bin
   BlockPtr to_bin = recons_blk_from_user_mem_ptr(put_in_bin);
-  const size_t bare_idx = GET_BARE_BIN_IDX(get_true_size(to_bin));
+  const size_t bare_idx = get_bare_bin_idx(get_true_size(to_bin));
   TEST_ASSERT_(1 == bare_idx, "bare_idx %lu should have been 1", bare_idx);
 
-  BlockPtr unsorted_sentinel = BLK_PTR_OF_UNSORTED(a_head);
+  BlockPtr unsorted_sentinel = blk_ptr_of_unsorted(&a_head);
   remove_from_linkedlist(to_bin);
   mark_as_free(to_bin);
   TEST_ASSERT_(
-      IS_LONE_SENTINEL(unsorted_sentinel),
+      is_lone_sentinel(unsorted_sentinel),
       "unsorted bin sentinel should be pointing to itself got next:%p, prev:%p",
       (void *)unsorted_sentinel->next, (void *)unsorted_sentinel->prev);
-  TEST_ASSERT_(0 == READ_BINMAP(a_head, bare_idx),
+  TEST_ASSERT_(0 == read_binmap(&a_head, bare_idx),
                "bin map for bin[%lu] should be 0", bare_idx);
 
   append_after(unsorted_sentinel, to_bin);
-  MARK_BIN(a_head, 0);
+  mark_bin(&a_head, 0);
 
   void *unsorted_binned = ensuring_malloc(n);
   TEST_ASSERT(unsorted_binned);
@@ -1163,7 +1163,7 @@ static void test_first_find_unsorted_bin(void) {
   const BlockPtr from_bin = recons_blk_from_user_mem_ptr(unsorted_binned);
   TEST_ASSERT(from_bin == to_bin);
   TEST_ASSERT(get_true_size(to_bin) == get_true_size(from_bin));
-  TEST_ASSERT_(IS_LONE_SENTINEL(unsorted_sentinel),
+  TEST_ASSERT_(is_lone_sentinel(unsorted_sentinel),
                "unsorted bin sentinel should be pointing to itself got "
                "next:%p, prev:%p",
                (void *)unsorted_sentinel->next,
@@ -1171,8 +1171,6 @@ static void test_first_find_unsorted_bin(void) {
   ensuring_free(unsorted_binned);
   MM_ASSERT_MARKER(RELEASED, 1);
 }
-
-extern void print_bin(ArenaPtr ar, const size_t ix);
 
 static void test_full_flow_consolidation_and_free(void) {
   LOG("=== %s: start ===\n", __func__);

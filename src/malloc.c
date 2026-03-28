@@ -174,7 +174,7 @@ static inline
 }
 
 static inline void insert_in_unsorted_bin(BlockPtr blk) {
-  BlockPtr unsorted_sentinel = BLK_PTR_OF_UNSORTED(a_head);
+  BlockPtr unsorted_sentinel = blk_ptr_of_unsorted(&a_head);
   append_after(unsorted_sentinel, blk);
   // We don't normally check on unsorted bin's bitmap, thus we don't housekeep.
   MM_MARK(PUT_IN_UNSORTED_BIN);
@@ -189,7 +189,7 @@ static inline
   // pre-mature fusion.
   mark_as_used(blk);
   const size_t true_size = get_true_size(blk);
-  const size_t idx = GET_FAST_BIN_IDX(true_size);
+  const size_t idx = get_fast_bin_idx(true_size);
   if (NULL == a_head.fastbins[idx])
     a_head.fastbins[idx] = blk;
   else {
@@ -201,23 +201,23 @@ static inline
 
 static inline void hot_insert_in_appropriate_bin(BlockPtr blk) {
   const size_t true_size = get_true_size(blk);
-  if (CAN_BE_FAST_BINNED(true_size))
+  if (can_be_fast_binned(true_size))
     insert_in_fastbin(blk);
   else
     insert_in_unsorted_bin(blk);
 }
 
 static inline BlockPtr find_fastbin(const size_t aligned_size) {
-  if (!CAN_BE_FAST_BINNED(aligned_size)) {
+  if (!can_be_fast_binned(aligned_size)) {
     return NULL;
   }
-  const size_t idx = GET_FAST_BIN_IDX(aligned_size);
+  const size_t idx = get_fast_bin_idx(aligned_size);
   // NOTE: fastbins are singly-linked
   const BlockPtr head = a_head.fastbins[idx];
   if (NULL == head)
     return NULL;
 
-  MOVE_FAST_BIN_TO_NEXT(a_head, idx);
+  move_fast_bin_to_next(&a_head, idx);
   MM_MARK(FASTBINNED);
   head->next = NULL;
   return head;
@@ -294,7 +294,7 @@ static inline
       MM_MARK(CONSOLIDATED);
       head = a_head.fastbins[f_idx];
       MM_ASSERT(head->next != head);
-      MOVE_FAST_BIN_TO_NEXT(a_head, f_idx);
+      move_fast_bin_to_next(&a_head, f_idx);
       // Fastbins are marked as used to prevent premature coalescing, thus we
       // first need to mark them as free.
       mark_as_free(head);
@@ -329,8 +329,8 @@ static inline
     // NOTE: To keep things simple, we pay the price of sorted insertion to
     // large bins.
     BlockPtr search_in_unsorted_consolidating(const size_t aligned_size) {
-  const BlockPtr sentinel = BLK_PTR_OF_UNSORTED(a_head);
-  if (IS_LONE_SENTINEL(sentinel))
+  const BlockPtr sentinel = blk_ptr_of_unsorted(&a_head);
+  if (is_lone_sentinel(sentinel))
     return NULL;
   BlockPtr blk = sentinel->next;
   BlockPtr nxt = NULL;
@@ -348,7 +348,7 @@ static inline
       return blk;
     }
     const size_t true_size = get_true_size(blk);
-    const size_t bin_idx = GET_BARE_BIN_IDX(true_size);
+    const size_t bin_idx = get_bare_bin_idx(true_size);
     BlockPtr blk_to_append_after = BLK_PTR_IN_BIN_AT(a_head, bin_idx);
 
     if (!IS_SMALL(true_size)) {
@@ -359,8 +359,8 @@ static inline
           blk_to_append_after, true_size);
     }
     append_after(blk_to_append_after, blk);
-    if (0 == READ_BINMAP(a_head, bin_idx))
-      MARK_BIN(a_head, bin_idx);
+    if (0 == read_binmap(&a_head, bin_idx))
+      mark_bin(&a_head, bin_idx);
 
     blk = nxt;
   }
@@ -370,15 +370,15 @@ static inline
 }
 
 static inline BlockPtr find_in_small_bin(const size_t aligned_size) {
-  size_t bare_idx = GET_BARE_BIN_IDX(aligned_size);
+  size_t bare_idx = get_bare_bin_idx(aligned_size);
   // Check if the exact sized bin has a chunk from bitmap.
-  if (READ_BINMAP(a_head, bare_idx) == 0)
+  if (read_binmap(&a_head, bare_idx) == 0)
     return NULL;
 
   BlockPtr sentinel = BLK_PTR_IN_BIN_AT(a_head, bare_idx);
-  if (IS_LONE_SENTINEL(sentinel)) {
+  if (is_lone_sentinel(sentinel)) {
     // We housekeep so that next calls don't have to.
-    UNMARK_BIN(a_head, bare_idx);
+    unmark_bin(&a_head, bare_idx);
     return NULL;
   }
   BlockPtr tail = sentinel->prev;
@@ -388,15 +388,15 @@ static inline BlockPtr find_in_small_bin(const size_t aligned_size) {
 }
 
 static inline BlockPtr find_in_large_bin(const size_t aligned_size) {
-  size_t bare_idx = GET_BARE_BIN_IDX(aligned_size);
+  size_t bare_idx = get_bare_bin_idx(aligned_size);
   // The bin has an element
-  if (READ_BINMAP(a_head, bare_idx) == 0)
+  if (read_binmap(&a_head, bare_idx) == 0)
     return NULL;
 
   const BlockPtr sentinel = BLK_PTR_IN_BIN_AT(a_head, bare_idx);
-  if (IS_LONE_SENTINEL(sentinel)) {
+  if (is_lone_sentinel(sentinel)) {
     // We housekeep so that next calls don't have to.
-    UNMARK_BIN(a_head, bare_idx);
+    unmark_bin(&a_head, bare_idx);
     return NULL;
   }
   BlockPtr larger =
@@ -525,7 +525,7 @@ static inline void free_or_maybe_release_sbrked(BlockPtr blk) {
   int is_tail = is_at_main_arena_tail(blk);
   // If not at tail and small enough to fast bin, put it in the
   // fast bin without fusing with any neighbors.
-  if (!is_tail && CAN_BE_FAST_BINNED(get_true_size(blk))) {
+  if (!is_tail && can_be_fast_binned(get_true_size(blk))) {
     insert_in_fastbin(blk);
     return;
   }
